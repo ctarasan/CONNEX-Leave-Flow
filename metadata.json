@@ -1,0 +1,8 @@
+
+{
+  "name": "HR Leave Flow Pro",
+  "description": "A comprehensive leave management system with employee requests, manager approvals, real-time notifications, and AI-powered monthly summaries.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

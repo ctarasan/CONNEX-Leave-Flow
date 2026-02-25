@@ -1,0 +1,18 @@
+ID,Name,StartDate,Position,Email,Under,Password
+1,นายชำนาญ ธรสารสมบัติ,8/7/2547,Managing Director,chamnan.t@b-connex.net,,1
+2,นายสารวุฒิ พิทักษ์เศวตไชย,8/7/2547,Software Development Manager,sarawuth.p@b-connex.net,1,2
+3,นางพูลทรัพย์ ธรสารสมบัติ,8/7/2547,Financial Director,poolsub.t@b-connex.net,1,3
+4,นางสาวศรีประไพ ศรีติมงคล,1/11/2555,Project Manager,sriprapai.s@b-connex.net,2,4
+5,นายอนุมาศ ไชยชนะ,2/5/2557,Project Manager,anumart.c@b-connex.net,2,5
+8,นางสาว อรพิน ปุผาโต,2/3/2561,แม่บ้าน,cptarasan@gmail.com,1,8
+11,นายณรงค์ศร ศักดิรามินทร์,26/1/2564,System Analyst,narongsorn.s@b-connex.net,2,11
+12,นางสาวปณพร เชื้อนพคุณ,26/4/2564,Business Analyst,panaphon.c@b-connex.net,2,12
+13,นายณัฐวุฒิ หวังพิทักษ์,27/6/2565,Senior System Analyst,nattawut.w@b-connex.net,2,13
+17,นายวีระพล สุภาโชค,1/9/2566,Senior Programmer,weeraphon.s@b-connex.net,2,17
+20,นางสาวสุกัญญา มณฑา,4/6/2567,Quality Assurance,sukanya.m@b-connex.net,2,20
+21,นายคณิต สง่าทรัพย์,17/2/2568,Brand Strategic Manager,kanit.s@b-connex.net,2,21
+23,นางสาวอัญชิษฐา จันทรนิกร,17/4/2568,Creative Designer,aunchitta.c@b-connex.net,2,23
+25,นายศุภณัฐ ปัดฐานัง,26/5/2568,Quality Assurance,supanat.p@b-connex.net,2,25
+26,นายสรจินต์ อินทร์ธิราช,4/8/2568,Programmer,sorrajin.i@b-connex.net,2,26
+27,นางสาวกัญาภัค ช่องพิทักษ์,8/9/2568,Sale Executive,kanyapak.c@b-connex.net,2,27
+28,นายมูฮัมหมัดนูรฎีน คะแม,26/9/2568,Programmer,muhammadnurdeen.k@b-connex.net,2,28
