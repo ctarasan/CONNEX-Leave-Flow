@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
+import { APP_TITLE_WITH_VERSION } from '../constants';
 import { getAllUsers, saveCurrentUser, loadFromApi } from '../store';
 import { isApiMode, login as apiLogin, setToken } from '../api';
 
@@ -112,7 +113,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="text-center mb-10">
           <div className="inline-flex flex-col items-center gap-2 mb-4">
             <img src="/connex-logo.png" alt="CONNEX" className="h-16 w-auto object-contain" />
-            <span className="text-lg font-bold text-gray-900 tracking-tight">Leave Flow Pro</span>
+            <span className="text-lg font-bold text-gray-900 tracking-tight">{APP_TITLE_WITH_VERSION}</span>
           </div>
           <p className="text-gray-600">ลงชื่อเข้าใช้งานเพื่อเริ่มทำรายการ</p>
         </div>

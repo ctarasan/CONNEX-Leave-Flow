@@ -12,7 +12,7 @@ import AttendanceModule from './components/AttendanceModule';
 import TeamAttendance from './components/TeamAttendance';
 import VacationLedger from './components/VacationLedger';
 import Login from './components/Login';
-import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026 } from './constants';
+import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION } from './constants';
 import { formatThaiDate } from './utils';
 import { useAlert } from './AlertContext';
 
@@ -139,6 +139,10 @@ const App: React.FC = () => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [fetchData]);
+
+  useEffect(() => {
+    document.title = APP_TITLE_WITH_VERSION;
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'report') {
@@ -297,7 +301,7 @@ const App: React.FC = () => {
         <div className="p-6 h-full flex flex-col">
           <div className="flex flex-col gap-2 mb-8">
             <img src="/connex-logo.png" alt="CONNEX" className="h-9 w-auto object-contain self-start" />
-            <h1 className="font-bold text-gray-900 tracking-tight text-sm">Leave Flow Pro</h1>
+            <h1 className="font-bold text-gray-900 tracking-tight text-sm">{APP_TITLE_WITH_VERSION}</h1>
           </div>
 
           <nav className="space-y-1">
