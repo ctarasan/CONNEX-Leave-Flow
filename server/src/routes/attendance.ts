@@ -4,6 +4,39 @@ import { rowToCamel } from '../util.js';
 
 const router = Router();
 
+/** ดึง IP ของ client (รองรับ proxy/Vercel: X-Forwarded-For, X-Real-IP) */
+function getClientIp(req: { ip?: string; socket?: { remoteAddress?: string }; headers?: Record<string, string | string[] | undefined> }): string {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  if (forwarded) {
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    return (typeof first === 'string' ? first : '').split(',')[0].trim() || '';
+  }
+  const realIp = req.headers?.['x-real-ip'];
+  if (realIp) return (Array.isArray(realIp) ? realIp[0] : realIp) || '';
+  if (req.ip) return req.ip;
+  return req.socket?.remoteAddress ?? '';
+}
+
+/**
+ * ตรวจว่า IP อยู่ในเครือข่ายออฟฟิศหรือไม่
+ * OFFICE_IP_RANGES = ค่าใน env (เช่น "192.168.,10.0.,1.2.3.4") คั่นด้วย comma
+ * ถ้าไม่ตั้งค่า = อนุญาตทั้งหมด ( backward compatibility )
+ */
+function isAllowedOfficeNetwork(clientIp: string): boolean {
+  const raw = process.env.OFFICE_IP_RANGES;
+  if (!raw || !clientIp) return true;
+  const ranges = String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  if (ranges.length === 0) return true;
+  return ranges.some(r => clientIp === r || clientIp.startsWith(r));
+}
+
+/** GET /api/attendance/verify-network — ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ (สำหรับปุ่ม "ตรวจสอบเครือข่าย WiFi") */
+router.get('/verify-network', (req, res) => {
+  const clientIp = getClientIp(req);
+  const allowed = isAllowedOfficeNetwork(clientIp);
+  res.json({ allowed, clientIp: allowed ? undefined : clientIp });
+});
+
 router.get('/', async (req, res) => {
   try {
     const userId = req.query.userId as string | undefined;
@@ -30,6 +63,14 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    const clientIp = getClientIp(req);
+    if (!isAllowedOfficeNetwork(clientIp)) {
+      return res.status(403).json({
+        error: 'ไม่อนุญาต: กรุณาลงเวลาจากเครือข่ายออฟฟิศ (WiFi/เครือข่ายภายในบริษัท) เท่านั้น',
+        code: 'NETWORK_NOT_ALLOWED',
+      });
+    }
+
     const { userId, type, date, checkIn, checkOut } = req.body;
     
     // Support two formats:

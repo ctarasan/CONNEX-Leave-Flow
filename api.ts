@@ -154,6 +154,13 @@ export async function deleteHoliday(date: string): Promise<void> {
   }
 }
 
+/** ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ (สำหรับปุ่มตรวจสอบเครือข่ายก่อนลงเวลา) */
+export async function getAttendanceVerifyNetwork(): Promise<{ allowed: boolean; clientIp?: string }> {
+  const res = await fetchWithAuth(`${API_BASE}/api/attendance/verify-network`);
+  const data = (await res.json().catch(() => ({}))) as { allowed?: boolean; clientIp?: string };
+  return { allowed: data.allowed === true, clientIp: data.clientIp };
+}
+
 export async function getAttendance(userId?: string): Promise<Record<string, unknown>[]> {
   const q = userId ? `?userId=${encodeURIComponent(userId)}` : '';
   const res = await fetchWithAuth(`${API_BASE}/api/attendance${q}`);

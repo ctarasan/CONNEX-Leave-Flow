@@ -654,8 +654,14 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
   }
 
   if (isApiMode()) {
-    api.postAttendance(userId, type).then(() => loadAttendanceForUser(userId)).catch(() => {});
-    return record;
+    const dateStrForApi = now.toISOString().split('T')[0];
+    return api.postAttendance(userId, type)
+      .then((data) => {
+        loadAttendanceForUser(userId);
+        const list = getAttendanceRecords(userId);
+        const updated = list.find(r => r.date === dateStrForApi);
+        return updated ?? record;
+      }) as Promise<AttendanceRecord>;
   }
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
   return record;

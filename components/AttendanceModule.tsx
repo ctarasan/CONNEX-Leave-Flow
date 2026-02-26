@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, AttendanceRecord } from '../types';
 import { saveAttendance, getAttendanceRecords } from '../store';
 import { useAlert } from '../AlertContext';
+import { isApiMode, getAttendanceVerifyNetwork } from '../api';
 
 interface AttendanceModuleProps {
   user: User;
@@ -29,38 +30,54 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
     return records.find(r => r.date === todayStr);
   }, [records]);
 
-  const verifyWiFiNetwork = () => {
+  const verifyWiFiNetwork = async () => {
     setIsVerifying(true);
     setVerificationStatus('IDLE');
-    setStatusMessage('กำลังสแกนหาเครือข่าย WiFi ในพื้นที่...');
+    setStatusMessage('กำลังตรวจสอบเครือข่าย...');
 
-    // จำลองการตรวจสอบ Network Interface
-    setTimeout(() => {
-      // สำหรับ Demo: เราจะจำลองว่าระบบตรวจพบ SSID ที่ต้องการ
-      // ในระบบเว็บจริง Browsers ไม่ให้เข้าถึง SSID โดยตรงผ่าน JS (Security Policy)
-      // ดังนั้นจึงต้องใช้การจำลองการตรวจสอบผ่าน Company Gateway IP
-      const detectedSSID = REQUIRED_SSID; 
-      
-      if (detectedSSID === REQUIRED_SSID) {
+    if (!isApiMode()) {
+      setVerificationStatus('FAILED');
+      setStatusMessage('การตรวจสอบเครือข่ายใช้ได้เมื่อเชื่อมต่อเซิร์ฟเวอร์บริษัทเท่านั้น กรุณาเชื่อมต่อเครือข่ายออฟฟิศ');
+      setIsVerifying(false);
+      return;
+    }
+
+    try {
+      const { allowed, clientIp } = await getAttendanceVerifyNetwork();
+      if (allowed) {
         setVerificationStatus('SUCCESS');
-        setStatusMessage(`เชื่อมต่อสำเร็จ: ตรวจพบเครือข่าย ${REQUIRED_SSID} (Secure Office Network)`);
+        setStatusMessage(`เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ (${REQUIRED_SSID})`);
       } else {
         setVerificationStatus('FAILED');
-        setStatusMessage(`ล้มเหลว: กรุณาเชื่อมต่อ WiFi ของบริษัท (${REQUIRED_SSID})`);
+        setStatusMessage(clientIp
+          ? `ล้มเหลว: IP ปัจจุบันไม่อยู่ในเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ (${REQUIRED_SSID})`
+          : `ล้มเหลว: กรุณาเชื่อมต่อ WiFi ออฟฟิศ (${REQUIRED_SSID}) — ลงเวลาได้เฉพาะที่ออฟฟิศเท่านั้น`);
       }
+    } catch {
+      setVerificationStatus('FAILED');
+      setStatusMessage(`ล้มเหลว: ไม่สามารถตรวจสอบเครือข่ายได้ — กรุณาเชื่อมต่อออฟฟิศ (${REQUIRED_SSID})`);
+    } finally {
       setIsVerifying(false);
-    }, 2000);
+    }
   };
 
-  const handleAction = (type: 'IN' | 'OUT') => {
+  const handleAction = async (type: 'IN' | 'OUT') => {
     if (verificationStatus !== 'SUCCESS') {
       showAlert(`กรุณาเชื่อมต่อและตรวจสอบสิทธิ์ผ่าน WiFi "${REQUIRED_SSID}" ก่อนทำรายการ`);
       return;
     }
-    saveAttendance(user.id, type);
-    setRecords(getAttendanceRecords(user.id));
-    onUpdate();
-    showAlert(type === 'IN' ? 'เช็คอินสำเร็จ (ผ่าน WiFi Office)' : 'เช็คเอาท์สำเร็จ');
+    try {
+      const result = saveAttendance(user.id, type);
+      const record = typeof (result as Promise<unknown>)?.then === 'function'
+        ? await (result as Promise<AttendanceRecord>)
+        : result as AttendanceRecord;
+      setRecords(getAttendanceRecords(user.id));
+      onUpdate();
+      showAlert(type === 'IN' ? 'เช็คอินสำเร็จ (ผ่านเครือข่ายออฟฟิศ)' : 'เช็คเอาท์สำเร็จ');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
+      showAlert(msg);
+    }
   };
 
   return (
