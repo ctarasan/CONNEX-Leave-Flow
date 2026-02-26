@@ -1,12 +1,19 @@
-import { GoogleGenAI } from "@google/genai";
 import { LeaveRequest } from "../types";
 
-// OWASP: Use env variable; Vite exposes client env via import.meta.env. Do not expose server API keys to client in production.
-const apiKey = typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY
-  ? import.meta.env.VITE_GEMINI_API_KEY
-  : (typeof process !== "undefined" && process.env?.GEMINI_API_KEY) || "";
+// OWASP: Use env variable. Lazy init: โหลด @google/genai เฉพาะเมื่อมี API key เพื่อไม่ให้ throw ใน browser เมื่อไม่มี key
+function getApiKey(): string {
+  if (typeof import.meta === "undefined") return "";
+  const v = import.meta.env?.VITE_GEMINI_API_KEY;
+  return (typeof v === "string" && v.trim().length > 0) ? v.trim() : "";
+}
 
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+let _ai: Awaited<ReturnType<typeof loadAi>> = null;
+async function loadAi() {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+  const { GoogleGenAI } = await import("@google/genai");
+  return new GoogleGenAI({ apiKey });
+}
 
 /** OWASP: Sanitize data sent to external API - limit length, no raw user HTML. */
 const MAX_REASON_SNIPPET = 100;
@@ -17,7 +24,11 @@ function sanitizeForPrompt(text: string, maxLen: number): string {
 }
 
 export const generateMonthlySummary = async (requests: LeaveRequest[], month: string): Promise<string> => {
-  if (!ai) {
+  if (!getApiKey()) {
+    return "ไม่สามารถเชื่อมต่อบริการ AI ได้ (ไม่ได้ตั้งค่า API Key)";
+  }
+  if (!_ai) _ai = await loadAi();
+  if (!_ai) {
     return "ไม่สามารถเชื่อมต่อบริการ AI ได้ (ไม่ได้ตั้งค่า API Key)";
   }
   const safeMonth = sanitizeForPrompt(month, MAX_MONTH_LENGTH);
@@ -43,7 +54,7 @@ export const generateMonthlySummary = async (requests: LeaveRequest[], month: st
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await _ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: prompt,
       config: {
