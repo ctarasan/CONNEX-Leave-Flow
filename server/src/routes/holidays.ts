@@ -8,7 +8,7 @@ router.get('/', async (_req, res) => {
     const { rows } = await pool.query('SELECT date, name FROM holidays ORDER BY date');
     const map: Record<string, string> = {};
     for (const r of rows as { date: string; name: string }[]) {
-      const d = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10);
+      const d = (r.date as unknown) instanceof Date ? (r.date as unknown as Date).toISOString().slice(0, 10) : String(r.date).slice(0, 10);
       map[d] = r.name;
     }
     res.json(map);

@@ -51,7 +51,7 @@ router.post('/login', async (req, res) => {
       sterilization: sterilization_quota || 0,
       paternity: paternity_quota || 0,
     };
-    const token = signToken({ id: row.id, role: row.role, email: row.email });
+    const token = signToken({ id: row.id, role: row.role, email: row.email as string });
     res.json({ user: out, token });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
