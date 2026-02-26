@@ -22,6 +22,7 @@ const DEFAULT_DASHBOARD_LEAVE_IDS = ['SICK', 'VACATION', 'PERSONAL'];
 const App: React.FC = () => {
   const { showConfirm } = useAlert();
   const [currentUser, setCurrentUser] = useState<User | null>(getInitialUser());
+  const [apiLoading, setApiLoading] = useState(isApiMode());
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
@@ -101,19 +102,23 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isApiMode()) {
-      loadFromApi().then(() => {
-        const u = getInitialUser();
-        if (u) {
-          Promise.all([loadAttendanceForUser(u.id), loadNotificationsForUser(u.id)]).then(() => {
-            fetchData({ forceReplaceRequests: true });
-            setReportTick(t => t + 1); // force reportRequests recompute หลัง loadFromApi เสร็จ
-          });
-        } else {
+      loadFromApi()
+        .then(() => {
+          setCurrentUser(getInitialUser());
+          const u = getInitialUser();
+          if (u) {
+            return Promise.all([loadAttendanceForUser(u.id), loadNotificationsForUser(u.id)]).then(() => {
+              fetchData({ forceReplaceRequests: true });
+              setReportTick(t => t + 1);
+            });
+          }
           fetchData({ forceReplaceRequests: true });
           setReportTick(t => t + 1);
-        }
-      });
+        })
+        .catch(() => {})
+        .finally(() => setApiLoading(false));
     } else {
+      setApiLoading(false);
       fetchData({ forceReplaceRequests: true });
     }
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -280,6 +285,17 @@ const App: React.FC = () => {
     const join = new Date(currentUser.joinDate);
     return (Date.now() - join.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
   }, [currentUser]);
+
+  if (apiLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="text-blue-600 font-bold">กำลังโหลดข้อมูลจากเซิร์ฟเวอร์...</div>
+        <footer className="mt-auto py-3 px-4 border-t border-gray-100 text-center text-[10px] text-gray-500 font-medium w-full">
+          ลิขสิทธิ์ของระบบ เป็นของ CONNEX Business Online Co., Ltd.
+        </footer>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (

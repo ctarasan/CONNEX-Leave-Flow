@@ -233,7 +233,7 @@ export async function loadFromApi(): Promise<void> {
 
   if (usersRes.status === 'fulfilled') {
     const users = toArray(usersRes.value as Record<string, unknown>[]).map(normalizeUser);
-    if (users.length > 0) setUsersCache(users);
+    setUsersCache(users);
   }
   if (typesRes.status === 'fulfilled') {
     const typesList = toArray(typesRes.value as Record<string, unknown>[]).map(normalizeLeaveType);
@@ -449,7 +449,7 @@ function setUsersCache(normalized: User[]): void {
 }
 
 export const getAllUsers = (): User[] => {
-  if (isApiMode() && _usersCache) return _usersCache;
+  if (isApiMode() && _usersCache !== null) return _usersCache;
   if (_usersCache) return _usersCache;
   const stored = localStorage.getItem(STORAGE_KEYS.USERS);
   if (!stored) {
@@ -676,8 +676,9 @@ export function invalidateLeaveRequestsCache(): void {
 }
 
 export const getLeaveRequests = (): LeaveRequest[] => {
-  if (isApiMode() && _leaveRequestsCache) return _leaveRequestsCache;
+  if (isApiMode() && _leaveRequestsCache !== null) return _leaveRequestsCache;
   if (_leaveRequestsCache) return _leaveRequestsCache;
+  if (isApiMode()) return [];
   const stored = localStorage.getItem(STORAGE_KEYS.LEAVE_REQUESTS);
   const parsed = safeJsonParse<LeaveRequest[]>(stored, []);
   const list = Array.isArray(parsed) ? parsed : [];
