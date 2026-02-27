@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { User } from '../types';
 import { APP_TITLE_WITH_VERSION } from '../constants';
 import { getAllUsers, saveCurrentUser, loadFromApi } from '../store';
-import { isApiMode, login as apiLogin, setToken } from '../api';
+import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
 
 /** OWASP: Rate limit - max attempts before lockout (client-side; production should enforce server-side). */
 const MAX_ATTEMPTS = 5;
@@ -57,6 +57,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isError, setIsError] = useState(false);
+  /** โหมด API: true = ติดต่อ Backend/DB ไม่ได้ (แสดงข้อความต่างจาก user/pass ผิด) */
+  const [connectionError, setConnectionError] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
 
@@ -67,13 +69,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     if (Date.now() < lockedUntil) return;
 
     if (isApiMode()) {
+      setConnectionError(false);
       apiLogin(email.trim(), password).then(({ user, token }) => {
         setAttempts(0);
         setToken(token);
         const normalized = normalizeUser(user as Record<string, unknown>);
         saveCurrentUser(normalized);
         loadFromApi().then(() => onLogin(normalized));
-      }).catch(() => {
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // status >= 500 = เซิร์ฟเวอร์/DB ขัดข้อง, status === 0 = ติดต่อ Backend ไม่ได้ (fetch ล้ม)
+        const isDbOrNetwork =
+          (err instanceof ApiError && (err.status >= 500 || err.status === 0)) ||
+          /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|Failed to fetch|NetworkError|เซิร์ฟเวอร์ขัดข้อง|connection|timeout|ฐานข้อมูล|database/i.test(msg);
+        setConnectionError(!!isDbOrNetwork);
         const next = attempts + 1;
         setAttempts(next);
         setIsError(true);
@@ -148,9 +157,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             {isError && (
-              <p className="text-red-500 text-xs text-center font-semibold">อีเมลหรือรหัสผ่านไม่ถูกต้อง</p>
+              <p className="text-red-500 text-xs text-center font-semibold">
+                {connectionError
+                  ? 'ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที'
+                  : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'}
+              </p>
             )}
-            {isError && isApiMode() && (
+            {isError && isApiMode() && !connectionError && (
               <p className="text-[10px] text-gray-500 text-center mt-0.5">ตรวจสอบ: อีเมลตรงกับใน Supabase หรือไม่? รหัสผ่าน = ID พนักงาน (001, 002) ถ้าใช้ seed</p>
             )}
 

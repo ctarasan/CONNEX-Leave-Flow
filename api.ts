@@ -9,6 +9,17 @@ const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API
 
 const TOKEN_KEY = 'hr_api_token';
 
+/** ใช้แยกกรณี error จาก API (เช่น 500 = เซิร์ฟเวอร์/DB ขัดข้อง) เพื่อแสดงข้อความให้ผู้ใช้ถูกต้อง */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 function getErrorMessage(res: Response, data: Record<string, unknown>): string {
   const msg = (data?.error ?? data?.message ?? data?.msg) as string | undefined;
   if (msg && typeof msg === 'string') return msg;
@@ -49,17 +60,24 @@ async function fetchWithAuth(url: string, init: RequestInit = {}): Promise<Respo
 }
 
 export async function login(email: string, password: string): Promise<{ user: Record<string, unknown>; token: string }> {
-  const res = await fetchWithAuth(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    body: JSON.stringify({ email: email.trim(), password }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithAuth(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'ติดต่อเซิร์ฟเวอร์ไม่ได้';
+    throw new ApiError(msg, 0);
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(getErrorMessage(res, data) || 'ล็อกอินไม่สำเร็จ');
+    const msg = getErrorMessage(res, data) || 'ล็อกอินไม่สำเร็จ';
+    throw new ApiError(msg, res.status);
   }
   const data = await res.json() as { token?: string; user?: Record<string, unknown> };
   if (data?.token && data?.user) return { user: data.user, token: data.token };
-  throw new Error('รูปแบบตอบกลับไม่ถูกต้อง');
+  throw new ApiError('รูปแบบตอบกลับไม่ถูกต้อง', 0);
 }
 
 /** เช็กสถานะ Backend และการเชื่อมต่อ DB (ใช้แสดงข้อความเมื่อติดต่อฐานข้อมูลไม่ได้) */
