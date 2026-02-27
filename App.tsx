@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId } from './store';
-import { isApiMode } from './api';
+import { isApiMode, getBackendStatus } from './api';
 import LeaveForm from './components/LeaveForm';
 import ApprovalBoard from './components/ApprovalBoard';
 import NotificationCenter from './components/NotificationCenter';
@@ -32,6 +32,8 @@ const App: React.FC = () => {
   const [showAllDashboardLeaveTypes, setShowAllDashboardLeaveTypes] = useState(false);
   /** ตัวนับเพื่อ force reportRequests ให้ recompute จาก cache หลัง loadLeaveRequestsForManager หรือ loadFromApi เสร็จ */
   const [reportTick, setReportTick] = useState(0);
+  /** โหมด API: เป็น true เมื่อติดต่อ Backend/ฐานข้อมูลไม่ได้ — แสดงข้อความบนหน้า Login */
+  const [dbUnavailable, setDbUnavailable] = useState(false);
 
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     if (!startStr || !endStr) return 0;
@@ -102,6 +104,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isApiMode()) {
+      setDbUnavailable(false);
       loadFromApi()
         .then(() => {
           setCurrentUser(getInitialUser());
@@ -115,8 +118,13 @@ const App: React.FC = () => {
           fetchData({ forceReplaceRequests: true });
           setReportTick(t => t + 1);
         })
-        .catch(() => {})
-        .finally(() => setApiLoading(false));
+        .catch(() => setDbUnavailable(true))
+        .finally(() => {
+          getBackendStatus()
+            .then((st) => { if (!st.database) setDbUnavailable(true); })
+            .catch(() => setDbUnavailable(true))
+            .finally(() => setApiLoading(false));
+        });
     } else {
       setApiLoading(false);
       fetchData({ forceReplaceRequests: true });
@@ -300,11 +308,16 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {isApiMode() ? (
+        {dbUnavailable && (
+          <div className="px-4 py-3 bg-red-50 border-b border-red-200 text-center text-sm text-red-800 font-medium">
+            ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที
+          </div>
+        )}
+        {isApiMode() && !dbUnavailable ? (
           <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-center text-xs text-blue-700 font-medium">
             โหมด Supabase — ข้อมูลโหลดและบันทึกลงเซิร์ฟเวอร์
           </div>
-        ) : (
+        ) : !dbUnavailable ? (
           <>
             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-center text-xs text-amber-800 font-medium">
               โหมดเก็บในเครื่อง — ข้อมูลจะไม่ส่งไปยัง Supabase
@@ -313,7 +326,7 @@ const App: React.FC = () => {
               เช็ก: Vercel → โปรเจกต์ <strong>Frontend</strong> → Settings → Environment Variables → มี <strong>VITE_API_URL</strong> หรือไม่? หลังเพิ่ม/แก้ต้อง <strong>Redeploy</strong>
             </div>
           </>
-        )}
+        ) : null}
         <Login onLogin={handleLogin} />
         <footer className="mt-auto py-3 px-4 border-t border-gray-100 text-center text-[10px] text-gray-500 font-medium">
           ลิขสิทธิ์ของระบบ เป็นของ CONNEX Business Online Co., Ltd.

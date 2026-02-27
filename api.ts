@@ -62,6 +62,14 @@ export async function login(email: string, password: string): Promise<{ user: Re
   throw new Error('รูปแบบตอบกลับไม่ถูกต้อง');
 }
 
+/** เช็กสถานะ Backend และการเชื่อมต่อ DB (ใช้แสดงข้อความเมื่อติดต่อฐานข้อมูลไม่ได้) */
+export async function getBackendStatus(): Promise<{ server: boolean; database: boolean; message?: string }> {
+  const res = await fetch(`${API_BASE}/api/status`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error('Backend ไม่ตอบสนอง');
+  const data = await res.json() as { server?: boolean; database?: boolean; message?: string };
+  return { server: !!data?.server, database: !!data?.database, message: data?.message };
+}
+
 export async function getUsers(): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/users`);
   if (!res.ok) {
