@@ -21,7 +21,7 @@ router.post('/login', async (req, res) => {
         sick_quota, personal_quota, vacation_quota, ordination_quota, 
         military_quota, maternity_quota, sterilization_quota, paternity_quota,
         password_hash 
-      FROM users WHERE email = $1`,
+      FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
       [emailTrimmed]
     );
     const row = rows[0] as { password_hash: string; id: string; role: string; [k: string]: unknown } | undefined;
@@ -31,7 +31,8 @@ router.post('/login', async (req, res) => {
     if (!row) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
-    const ok = await bcrypt.compare(String(password), row.password_hash);
+    const passwordTrimmed = String(password).trim();
+    const ok = await bcrypt.compare(passwordTrimmed, row.password_hash);
     // #region agent log
     fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:compare', message: 'bcrypt compare result', data: { compareOk: ok }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
     // #endregion

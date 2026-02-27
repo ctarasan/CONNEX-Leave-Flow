@@ -102,7 +102,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const handleDemoClick = (user: User) => {
     setEmail(user.email);
-    setPassword(user.password);
+    // โหมด API: Backend ไม่ส่ง password มา — ใน Supabase (seed) รหัสผ่าน = ID พนักงาน (001, 002, ...)
+    setPassword(isApiMode() ? user.id : (user.password || ''));
   };
 
   const isLocked = Date.now() < lockedUntil;
@@ -137,14 +138,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="รหัสผ่าน (ID พนักงาน)"
+                placeholder={isApiMode() ? 'รหัสผ่าน = ID พนักงาน (เช่น 001, 002)' : 'รหัสผ่าน (ID พนักงาน)'}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
+              {isApiMode() && (
+                <p className="mt-1 text-[10px] text-gray-500">ถ้าใช้ข้อมูลจาก seed: รหัสผ่านคือ ID 3 หลัก (001, 002, 003 ...)</p>
+              )}
             </div>
 
             {isError && (
               <p className="text-red-500 text-xs text-center font-semibold">อีเมลหรือรหัสผ่านไม่ถูกต้อง</p>
+            )}
+            {isError && isApiMode() && (
+              <p className="text-[10px] text-gray-500 text-center mt-0.5">ตรวจสอบ: อีเมลตรงกับใน Supabase หรือไม่? รหัสผ่าน = ID พนักงาน (001, 002) ถ้าใช้ seed</p>
             )}
 
             <button 
