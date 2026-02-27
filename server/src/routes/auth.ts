@@ -6,6 +6,24 @@ import { signToken } from '../middleware/auth.js';
 
 const router = Router();
 
+/** เช็กว่ามี user ตามอีเมลหรือไม่ (ใช้ยืนยันว่า Backend ชี้ไปที่ DB เดียวกับที่คุณดูใน Supabase) */
+router.get('/check-email', async (req, res) => {
+  try {
+    const email = req.query.email as string;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'ต้องส่ง query email' });
+    }
+    const { rows } = await pool.query(
+      'SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER($1)',
+      [email.trim()]
+    );
+    return res.json({ exists: rows.length > 0, id: rows[0]?.id ?? null });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  }
+});
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -32,7 +50,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
     const passwordTrimmed = String(password).trim();
-    const ok = await bcrypt.compare(passwordTrimmed, row.password_hash);
+    const hashFromDb = (row.password_hash ?? '').toString().trim();
+    const ok = hashFromDb ? await bcrypt.compare(passwordTrimmed, hashFromDb) : false;
     // #region agent log
     fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:compare', message: 'bcrypt compare result', data: { compareOk: ok }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
     // #endregion
