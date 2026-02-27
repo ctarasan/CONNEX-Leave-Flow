@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate": "tsx migrate.ts",
-    "seed": "tsx seed.ts"
+    "seed": "tsx seed.ts",
+    "reset-password": "node scripts/reset-password-hash.mjs 001 chamnan.t@b-connex.net"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
