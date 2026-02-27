@@ -300,6 +300,18 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50">
+        {isApiMode() ? (
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-center text-xs text-blue-700 font-medium">
+            โหมด Supabase — ข้อมูลโหลดและบันทึกลงเซิร์ฟเวอร์
+          </div>
+        ) : (
+          <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-center text-xs text-amber-800 font-medium">
+            โหมดเก็บในเครื่อง — ข้อมูลจะไม่ส่งไปยัง Supabase
+          </div>
+          <div className="px-4 py-1.5 bg-amber-100/80 border-b border-amber-200 text-center text-[10px] text-amber-700">
+            เช็ก: Vercel → โปรเจกต์ <strong>Frontend</strong> → Settings → Environment Variables → มี <strong>VITE_API_URL</strong> หรือไม่? หลังเพิ่ม/แก้ต้อง <strong>Redeploy</strong>
+          </div>
+        )}
         <Login onLogin={handleLogin} />
         <footer className="mt-auto py-3 px-4 border-t border-gray-100 text-center text-[10px] text-gray-500 font-medium">
           ลิขสิทธิ์ของระบบ เป็นของ CONNEX Business Online Co., Ltd.
@@ -361,6 +373,14 @@ const App: React.FC = () => {
               </button>
             )}
           </nav>
+
+          {!isApiMode() && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wide mb-1">โหมดเก็บในเครื่อง</p>
+              <p className="text-xs text-amber-700">คำขอลาและข้อมูลจะไม่ส่งไปยัง Supabase</p>
+              <p className="text-[10px] text-amber-600 mt-1">ตั้งค่า: Vercel → โปรเจกต์ <strong>Frontend</strong> (connex-leave-flow) → Settings → Environment Variables → เพิ่ม <strong>VITE_API_URL</strong> = URL ของ Backend → แล้วกด <strong>Redeploy</strong></p>
+            </div>
+          )}
 
           <div className="mt-auto pt-10">
             <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">

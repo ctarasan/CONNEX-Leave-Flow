@@ -129,12 +129,17 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
       });
       setLoading(false);
       if (result.ok) {
-        console.log('✅ [LeaveForm] ส่งคำขอลาสำเร็จ');
+        console.log('✅ [LeaveForm] ส่งคำขอลาสำเร็จ', result.savedToServer ? 'ลงเซิร์ฟเวอร์' : 'ในเครื่อง');
         onSuccess();
         setStartDate('');
         setEndDate('');
         setReason('');
-        showAlert(`ส่งใบลาเรียบร้อยแล้ว (จำนวน ${requestedDays} วันทำการ)`);
+        const daysText = `จำนวน ${requestedDays} วันทำการ`;
+        if (result.savedToServer) {
+          showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกลง Supabase แล้ว`);
+        } else {
+          showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกเฉพาะในเครื่องนี้ ไม่ได้ส่งไป Supabase (ตั้ง VITE_API_URL แล้ว Redeploy เพื่อเชื่อมเซิร์ฟเวอร์)`);
+        }
       } else {
         console.error('❌ [LeaveForm] ส่งคำขอลาล้มเหลว:', result.error);
         showAlert(result.error);

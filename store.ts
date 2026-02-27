@@ -222,8 +222,6 @@ function normalizeHolidaysResponse(raw: unknown): Record<string, string> {
 /** โหลดข้อมูลจาก API (เรียกเมื่อเปิดแอปในโหมด Supabase) — รองรับ multi-user */
 export async function loadFromApi(): Promise<void> {
   if (!isApiMode()) return;
-  // ใช้ Promise.allSettled แทน Promise.all — ถ้า API ตัวใดตัวหนึ่งล้มเหลว (เช่น holidays)
-  // ข้อมูลอื่น (users, leave-requests) ยังคงโหลดได้ปกติ ไม่ block ทั้งหมด
   const [usersRes, typesRes, requestsRes, holidaysRes] = await Promise.allSettled([
     api.getUsers(),
     api.getLeaveTypes(),
@@ -231,20 +229,28 @@ export async function loadFromApi(): Promise<void> {
     api.getHolidays(),
   ]);
 
-  if (usersRes.status === 'fulfilled') {
+  if (usersRes.status === 'rejected') {
+    console.error('[loadFromApi] getUsers failed:', usersRes.reason);
+  } else {
     const users = toArray(usersRes.value as Record<string, unknown>[]).map(normalizeUser);
     setUsersCache(users);
   }
-  if (typesRes.status === 'fulfilled') {
+  if (typesRes.status === 'rejected') {
+    console.error('[loadFromApi] getLeaveTypes failed:', typesRes.reason);
+  } else if (typesRes.status === 'fulfilled') {
     const typesList = toArray(typesRes.value as Record<string, unknown>[]).map(normalizeLeaveType);
     _leaveTypesCache = typesList.length > 0 ? normalizeLeaveTypeList(typesList) : INITIAL_LEAVE_TYPES;
   }
-  if (requestsRes.status === 'fulfilled') {
+  if (requestsRes.status === 'rejected') {
+    console.error('[loadFromApi] getLeaveRequests failed:', requestsRes.reason);
+  } else {
     const list = toArray(requestsRes.value as Record<string, unknown>[]).map(normalizeLeaveRequest);
     _leaveRequestsCache = list;
     _leaveRequestsByIdCache = new Map(list.map(r => [r.id, r]));
   }
-  if (holidaysRes.status === 'fulfilled') {
+  if (holidaysRes.status === 'rejected') {
+    console.error('[loadFromApi] getHolidays failed:', holidaysRes.reason);
+  } else if (holidaysRes.status === 'fulfilled') {
     _holidaysCache = normalizeHolidaysResponse(holidaysRes.value as Record<string, unknown>);
   }
 }
@@ -748,7 +754,7 @@ function dateRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: s
   return aStart <= bEnd && bStart <= aEnd;
 }
 
-export type SaveLeaveRequestResult = { ok: true } | { ok: false; error: string };
+export type SaveLeaveRequestResult = { ok: true; savedToServer?: boolean } | { ok: false; error: string };
 
 /** OWASP: Validate all inputs (type, date format, length) before persist. ไม่อนุญาตให้ช่วงวันลาซ้อนทับกับรายการที่รออนุมัติหรืออนุมัติแล้วของพนักงานคนเดียวกัน */
 export const saveLeaveRequest = async (data: Omit<LeaveRequest, 'id' | 'status' | 'submittedAt'>): Promise<SaveLeaveRequestResult> => {
@@ -805,7 +811,7 @@ export const saveLeaveRequest = async (data: Omit<LeaveRequest, 'id' | 'status' 
       if (employee?.managerId) {
         await api.postNotification(employee.managerId, 'คำขอลาใหม่จากพนักงาน', `${data.userName} ได้ส่งคำขอลาประเภท ${data.type} ตั้งแต่วันที่ ${data.startDate}`).catch(() => {});
       }
-      return { ok: true };
+      return { ok: true, savedToServer: true };
     } catch (err) {
       console.error('❌ [store.ts] บันทึกคำขอลาไป Supabase ไม่สำเร็จ:', err);
       return { ok: false, error: 'ไม่สามารถบันทึกคำขอลาได้ กรุณาลองใหม่' };
@@ -824,7 +830,7 @@ export const saveLeaveRequest = async (data: Omit<LeaveRequest, 'id' | 'status' 
       message: `${data.userName} ได้ส่งคำขอลาประเภท ${data.type} ตั้งแต่วันที่ ${data.startDate}`,
     });
   }
-  return { ok: true };
+  return { ok: true, savedToServer: false };
 };
 
 /** OWASP: Validate id/status, sanitize managerComment length. Access control: อนุญาตเฉพาะผู้บังคับบัญชาของพนักงานที่ยื่นคำขอเท่านั้น */

@@ -30,7 +30,8 @@
 ### 3. CORS และ Network
 
 - Backend ต้องอนุญาต origin ของหน้า Frontend (เช่น `https://your-app.vercel.app`)
-- เปิด DevTools (F12) → แท็บ Network: ดูว่า request ไปที่ `VITE_API_URL` (เช่น `/api/users`, `/api/leave-requests`) เป็น status 200 หรือมี error (401, 403, 500, CORS)
+- เปิด DevTools (F12) → แท็บ **Network**: ดูว่า request ไปที่ Backend (เช่น `/api/users`, `/api/leave-requests`) เป็น status 200 หรือมี error (401, 403, 500, CORS)
+- เปิดแท็บ **Console**: ถ้าโหลดข้อมูลไม่สำเร็จ จะมีข้อความ `[loadFromApi] getUsers failed:` หรือ `[loadFromApi] getLeaveRequests failed:` พร้อมรายละเอียด error
 
 ### 4. ล็อกอินและ Token
 
@@ -39,4 +40,21 @@
 
 ---
 
-สรุป: ให้ตรวจว่า **VITE_API_URL** ถูกตั้งตอน build และ **Backend ต่อ Supabase ได้และมีข้อมูลในตาราง** จากนั้นรอหน้า "กำลังโหลดข้อมูลจากเซิร์ฟเวอร์..." จบแล้วข้อมูลจาก Supabase ควรแสดงตามที่โหลดได้จาก API
+## เมื่อรายการที่ทำผ่าน Frontend ไม่ปรากฏใน Supabase (ไม่มีการบันทึกลงเซิร์ฟเวอร์)
+
+ถ้ายื่นคำขอลา / เพิ่มผู้ใช้ / อนุมัติคำขอ ผ่าน Frontend แล้วไปดูใน Supabase ไม่มีรายการดังกล่าว แปลว่า **Frontend ยังไม่เชื่อมกับ Backend** — ข้อมูลถูกเก็บเฉพาะใน localStorage ของเบราว์เซอร์
+
+### สาเหตุและวิธีแก้
+
+- **สาเหตุ:** โปรเจกต์ Frontend (บน Vercel) ถูก **build โดยไม่มีตัวแปร VITE_API_URL** ดังนั้นแอปจะทำงานใน "โหมดเก็บในเครื่อง" เท่านั้น ไม่เรียก API และไม่ส่งข้อมูลไป Backend/Supabase
+- **วิธีแก้:**
+  1. ไปที่ **Vercel** → เลือกโปรเจกต์ **Frontend** (connex-leave-flow)
+  2. **Settings** → **Environment Variables**
+  3. เพิ่มตัวแปร **`VITE_API_URL`** = URL เต็มของ Backend (เช่น `https://your-backend.vercel.app` ไม่มี `/api` ต่อท้าย)
+  4. **สำคัญ:** หลังเพิ่มหรือแก้ env ต้อง **Redeploy** โปรเจกต์ Frontend (Deployments → ⋮ → Redeploy) เพื่อให้ build ใหม่มีค่า `VITE_API_URL` ในแอป
+
+หลัง Redeploy แล้ว เปิดแอปใหม่ ถ้าเชื่อมสำเร็จจะเห็นแถบ **"โหมด Supabase — ข้อมูลโหลดและบันทึกลงเซิร์ฟเวอร์"** ที่ด้านบน (ไม่มีแถบสีเหลือง "โหมดเก็บในเครื่อง") และคำขอลา/ผู้ใช้ที่ทำจาก Frontend จะไปปรากฏใน Supabase
+
+---
+
+สรุป: ให้ตรวจว่า **VITE_API_URL** ถูกตั้งตอน build และ **Backend ต่อ Supabase ได้และมีข้อมูลในตาราง** จากนั้นรอหน้า "กำลังโหลดข้อมูลจากเซิร์ฟเวอร์..." จบแล้วข้อมูลจาก Supabase ควรแสดงตามที่โหลดได้จาก API และการบันทึกจาก Frontend จะลง Supabase ผ่าน Backend

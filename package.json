@@ -25,5 +25,9 @@
     "tailwindcss": "^4.2.1",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "overrides": {
+    "glob": "^10.4.5",
+    "tar": "^6.2.2"
   }
 }
