@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
-import { APP_TITLE_WITH_VERSION } from '../constants';
+import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
 import { getAllUsers, saveCurrentUser, loadFromApi } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
 
@@ -124,6 +124,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="inline-flex flex-col items-center gap-2 mb-4">
             <img src="/connex-logo.png" alt="CONNEX" className="h-16 w-auto object-contain" />
             <span className="text-lg font-bold text-gray-900 tracking-tight">{APP_TITLE_WITH_VERSION}</span>
+            <span className="text-xs text-gray-500">อัปเดตโค้ดล่าสุด: {APP_LAST_UPDATED}</span>
           </div>
           <p className="text-gray-600">ลงชื่อเข้าใช้งานเพื่อเริ่มทำรายการ</p>
         </div>
