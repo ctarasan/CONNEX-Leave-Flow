@@ -1,0 +1,6 @@
+#!/bin/sh
+# Push หลังทุก commit เพื่อให้ Vercel deploy อัตโนมัติ (เมื่อโปรเจกต์ Vercel ผูกกับ repo)
+# วิธีใช้: copy ไฟล์นี้ไปที่ .git/hooks/post-commit แล้ว chmod +x .git/hooks/post-commit (Mac/Linux)
+branch=$(git rev-parse --abbrev-ref HEAD)
+echo "[post-commit] Pushing $branch to origin..."
+exec git push origin "$branch"

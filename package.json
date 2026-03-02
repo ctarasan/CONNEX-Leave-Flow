@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "push": "git push origin HEAD",
+    "setup:push-hook": "node scripts/setup-push-hook.cjs"
   },
   "dependencies": {
     "@google/genai": "^1.41.0",

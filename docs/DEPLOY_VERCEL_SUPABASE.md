@@ -80,6 +80,32 @@
 
 ---
 
+## Push อัตโนมัติหลัง commit (ให้ Vercel deploy ทุกครั้งที่มีการแก้ไข)
+
+ถ้าโปรเจกต์ Vercel ผูกกับ Git repo อยู่ การ **push** ขึ้น remote จะทำให้ Vercel build และ deploy ให้อัตโนมัติ
+
+### วิธีที่ 1: ตั้งค่า Git hook (แนะนำ)
+
+รันครั้งเดียวในโปรเจกต์:
+
+```bash
+npm run setup:push-hook
+```
+
+จากนั้นทุกครั้งที่คุณ **git commit** จะ **push ไป origin อัตโนมัติ** → Vercel จะ deploy ให้
+
+### วิธีที่ 2: Push เองหลัง commit
+
+ถ้าไม่ใช้ hook ให้ push เองหลัง commit:
+
+```bash
+npm run push
+```
+
+หรือ `git push origin master` (หรือ branch ที่ Vercel ดูอยู่ เช่น `main`)
+
+---
+
 ## แก้ปัญหา: ยังขึ้น "ติดต่อฐานข้อมูลไม่ได้" บน Vercel
 
 ### ขั้นที่ 1 — ดูข้อความในแอป
