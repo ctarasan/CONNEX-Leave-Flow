@@ -83,8 +83,11 @@ export async function login(email: string, password: string): Promise<{ user: Re
 /** เช็กสถานะ Backend และการเชื่อมต่อ DB (ใช้แสดงข้อความเมื่อติดต่อฐานข้อมูลไม่ได้) */
 export async function getBackendStatus(): Promise<{ server: boolean; database: boolean; message?: string }> {
   const res = await fetch(`${API_BASE}/api/status`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
-  if (!res.ok) throw new Error('Backend ไม่ตอบสนอง');
-  const data = await res.json() as { server?: boolean; database?: boolean; message?: string };
+  const data = await res.json().catch(() => ({})) as { server?: boolean; database?: boolean; message?: string };
+  if (!res.ok) {
+    const msg = data?.message || `Backend ตอบ ${res.status}`;
+    throw new Error(msg);
+  }
   return { server: !!data?.server, database: !!data?.database, message: data?.message };
 }
 

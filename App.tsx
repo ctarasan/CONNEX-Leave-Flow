@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId } from './store';
-import { isApiMode, getBackendStatus } from './api';
+import { isApiMode, getBackendStatus, getApiBase } from './api';
 import LeaveForm from './components/LeaveForm';
 import ApprovalBoard from './components/ApprovalBoard';
 import NotificationCenter from './components/NotificationCenter';
@@ -34,6 +34,8 @@ const App: React.FC = () => {
   const [reportTick, setReportTick] = useState(0);
   /** โหมด API: เป็น true เมื่อติดต่อ Backend/ฐานข้อมูลไม่ได้ — แสดงข้อความบนหน้า Login */
   const [dbUnavailable, setDbUnavailable] = useState(false);
+  /** เหตุผลที่ติดต่อไม่ได้ (เพื่อแสดงใน UI และดีบัก) */
+  const [dbUnavailableReason, setDbUnavailableReason] = useState<string | null>(null);
 
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     if (!startStr || !endStr) return 0;
@@ -105,6 +107,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isApiMode()) {
       setDbUnavailable(false);
+      setDbUnavailableReason(null);
       loadFromApi()
         .then(() => {
           setCurrentUser(getInitialUser());
@@ -118,11 +121,24 @@ const App: React.FC = () => {
           fetchData({ forceReplaceRequests: true });
           setReportTick(t => t + 1);
         })
-        .catch(() => setDbUnavailable(true))
+        .catch((err) => {
+          setDbUnavailableReason(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
+          setDbUnavailable(true);
+        })
         .finally(() => {
           getBackendStatus()
-            .then((st) => { if (!st.database) setDbUnavailable(true); })
-            .catch(() => setDbUnavailable(true))
+            .then((st) => {
+              if (!st.database) {
+                setDbUnavailableReason(st.message || 'Backend ตอบแต่ฐานข้อมูลเชื่อมไม่ได้');
+                setDbUnavailable(true);
+              }
+            })
+            .catch((err) => {
+              const msg = err instanceof Error ? err.message : 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์';
+              setDbUnavailableReason(msg);
+              setDbUnavailable(true);
+              console.error('[App] getBackendStatus failed:', err);
+            })
             .finally(() => setApiLoading(false));
         });
     } else {
@@ -310,7 +326,16 @@ const App: React.FC = () => {
       <div className="min-h-screen flex flex-col bg-gray-50">
         {dbUnavailable && (
           <div className="px-4 py-3 bg-red-50 border-b border-red-200 text-center text-sm text-red-800 font-medium">
-            ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที
+            <p>ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที</p>
+            {dbUnavailableReason && (
+              <p className="text-xs text-red-600 mt-1 font-normal">สาเหตุ: {dbUnavailableReason}</p>
+            )}
+            <p className="text-xs text-red-600 mt-1">
+              ตรวจสอบ: ถ้ารันบนเครื่อง — ในโฟลเดอร์ <code className="bg-red-100 px-1 rounded">server</code> ใช้ <code className="bg-red-100 px-1 rounded">npm run dev</code> แล้วรีเฟรช. ถ้า deploy บน Vercel — ตั้ง <strong>VITE_API_URL</strong> = URL ของ Backend แล้ว <strong>Redeploy Frontend</strong>; Backend ต้องมี <strong>DATABASE_URL</strong> (Supabase) และ <strong>JWT_SECRET</strong>
+            </p>
+            {getApiBase() && (
+              <p className="text-[10px] text-red-500 mt-0.5">แอปกำลังเรียก: {getApiBase()}/api/status</p>
+            )}
           </div>
         )}
         {isApiMode() && !dbUnavailable ? (
