@@ -63,12 +63,17 @@ async function fetchWithAuth(url: string, init: RequestInit = {}): Promise<Respo
     res.clone().json().then((data: Record<string, unknown>) => {
       if (data?.code === 'SESSION_REPLACED') {
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent(SESSION_REPLACED_EVENT));
+          window.dispatchEvent(new CustomEvent(SESSION_REPLACED_EVENT, { detail: data }));
         }
       }
     }).catch(() => {});
   }
   return res;
+}
+
+/** เช็กว่า session ยังเป็นล่าสุดหรือไม่ (ใช้เมื่อมีกิจกรรม เช่น ขยับเมาส์ — ถ้า login จาก device อื่นจะได้ 401 และ trigger SESSION_REPLACED_EVENT พร้อม detail) */
+export async function getSessionCheck(): Promise<void> {
+  await fetchWithAuth(`${API_BASE}/api/auth/session-check`);
 }
 
 export async function login(email: string, password: string): Promise<{ user: Record<string, unknown>; token: string }> {

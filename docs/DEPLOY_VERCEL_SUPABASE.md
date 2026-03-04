@@ -16,7 +16,7 @@
 
 1. ไปที่ **Supabase** → โปรเจกต์ของคุณ → **SQL Editor**
 2. รันสคริปต์จาก **`scripts/init-supabase.sql`** (สร้างตาราง `users`, `leave_requests`, `leave_types`, `holidays` ฯลฯ)
-3. (ถ้าใช้ฟีเจอร์ **หนึ่ง user ต่อหนึ่ง device**) รัน **`server/migrations/003_user_sessions.sql`** เพื่อสร้างตาราง `user_sessions`
+3. (ถ้าใช้ฟีเจอร์ **หนึ่ง user ต่อหนึ่ง device**) รัน **`server/migrations/003_user_sessions.sql`** แล้วรัน **`server/migrations/004_user_sessions_ip_ua.sql`** (เพิ่มคอลัมน์ IP/User-Agent สำหรับแสดงในข้อความแจ้งเตือน)
 4. ไปที่ **Project Settings** (ไอคอนฟันเฟือง) → **Database**
 5. คัดลอก **Connection string** (แบบ URI) แล้วแทนที่ `[YOUR-PASSWORD]` ด้วยรหัสผ่าน Database ของโปรเจกต์  
    - ใช้พอร์ต **6543** (Connection pooler) จะเหมาะกับ serverless บน Vercel  

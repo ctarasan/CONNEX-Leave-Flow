@@ -55,15 +55,19 @@ export async function checkSession(req: Request, res: Response, next: NextFuncti
     return;
   }
   try {
-    const { rows } = await pool.query<{ session_id: string }>(
-      'SELECT session_id FROM user_sessions WHERE user_id = $1',
+    const { rows } = await pool.query<{ session_id: string; ip_address: string | null; user_agent: string | null; updated_at: string | null }>(
+      'SELECT session_id, ip_address, user_agent, updated_at FROM user_sessions WHERE user_id = $1',
       [req.user.id]
     );
     const current = rows[0]?.session_id;
     if (current != null && current !== sessionId) {
+      const row = rows[0];
       res.status(401).json({
         error: 'คุณได้เข้าสู่ระบบจากอุปกรณ์อื่น จึงออกจากระบบบนอุปกรณ์นี้แล้ว',
         code: 'SESSION_REPLACED',
+        loggedInFromIp: row?.ip_address ?? undefined,
+        loggedInAt: row?.updated_at ?? undefined,
+        userAgent: row?.user_agent ?? undefined,
       });
       return;
     }

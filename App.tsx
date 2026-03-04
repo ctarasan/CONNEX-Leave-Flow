@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId } from './store';
-import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT } from './api';
+import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT, getSessionCheck } from './api';
 import LeaveForm from './components/LeaveForm';
 import ApprovalBoard from './components/ApprovalBoard';
 import NotificationCenter from './components/NotificationCenter';
@@ -175,14 +175,39 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isApiMode()) return;
-    const onSessionReplaced = () => {
+    const onSessionReplaced = (e: Event) => {
+      const d = (e as CustomEvent<{ loggedInFromIp?: string; loggedInAt?: string; userAgent?: string }>)?.detail ?? {};
+      const ip = d.loggedInFromIp?.trim() || 'ไม่ทราบ';
+      const at = d.loggedInAt ? new Date(d.loggedInAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      const ua = d.userAgent?.trim() || '';
+      let msg = 'มีการใช้งานบนอุปกรณ์อื่นแล้ว\n\n';
+      msg += `IP Address: ${ip}\n`;
+      if (at) msg += `เมื่อ: ${at}\n`;
+      if (ua) msg += `อุปกรณ์/เบราว์เซอร์: ${ua.length > 80 ? ua.slice(0, 80) + '…' : ua}\n`;
+      msg += '\nออกจากระบบบนอุปกรณ์นี้แล้ว';
       logoutUser();
       setCurrentUser(null);
-      showAlert('คุณได้เข้าสู่ระบบจากอุปกรณ์อื่น จึงออกจากระบบบนอุปกรณ์นี้แล้ว');
+      showAlert(msg);
     };
     window.addEventListener(SESSION_REPLACED_EVENT, onSessionReplaced);
     return () => window.removeEventListener(SESSION_REPLACED_EVENT, onSessionReplaced);
   }, [showAlert]);
+
+  /** เช็ก session เมื่อผู้ใช้ขยับเมาส์/กดคีย์/โฟกัส (throttle 2 วินาที) — ถ้า login จาก device อื่นจะแจ้งเตือนและ logout ทันที */
+  useEffect(() => {
+    if (!isApiMode() || !currentUser) return;
+    let lastCheck = 0;
+    const throttleMs = 2000;
+    const runCheck = () => {
+      const now = Date.now();
+      if (now - lastCheck < throttleMs) return;
+      lastCheck = now;
+      getSessionCheck();
+    };
+    const events = ['mousemove', 'keydown', 'focus'] as const;
+    events.forEach(ev => window.addEventListener(ev, runCheck));
+    return () => events.forEach(ev => window.removeEventListener(ev, runCheck));
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (activeTab === 'report') {
