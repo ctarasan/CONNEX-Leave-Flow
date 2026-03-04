@@ -9,8 +9,6 @@ interface AttendanceModuleProps {
   onUpdate: () => void;
 }
 
-const REQUIRED_SSID = "Connex_fibre_2.4G";
-
 const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) => {
   const { showAlert } = useAlert();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -37,7 +35,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
 
     if (!isApiMode()) {
       setVerificationStatus('FAILED');
-      setStatusMessage('การตรวจสอบเครือข่ายใช้ได้เมื่อเชื่อมต่อเซิร์ฟเวอร์บริษัทเท่านั้น กรุณาเชื่อมต่อเครือข่ายออฟฟิศ');
+      setStatusMessage(`การตรวจสอบ WiFi "${REQUIRED_SSID}" ใช้ได้เมื่อแอปเชื่อมต่อเซิร์ฟเวอร์บริษัท กรุณาเชื่อมต่อ WiFi ออฟฟิศ`);
       setIsVerifying(false);
       return;
     }
@@ -46,16 +44,16 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
       const { allowed, clientIp } = await getAttendanceVerifyNetwork();
       if (allowed) {
         setVerificationStatus('SUCCESS');
-        setStatusMessage(`เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ (${REQUIRED_SSID})`);
+        setStatusMessage('เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ — สามารถลงเวลาได้');
       } else {
         setVerificationStatus('FAILED');
         setStatusMessage(clientIp
-          ? `ล้มเหลว: IP ปัจจุบันไม่อยู่ในเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ (${REQUIRED_SSID})`
-          : `ล้มเหลว: กรุณาเชื่อมต่อ WiFi ออฟฟิศ (${REQUIRED_SSID}) — ลงเวลาได้เฉพาะที่ออฟฟิศเท่านั้น`);
+          ? 'ตรวจสอบไม่ผ่าน: ไม่อยู่บนเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศเท่านั้น'
+          : 'ตรวจสอบไม่ผ่าน: กรุณาเชื่อมต่อ WiFi ออฟฟิศ — ลงเวลาได้เฉพาะที่ออฟฟิศ');
       }
     } catch {
       setVerificationStatus('FAILED');
-      setStatusMessage(`ล้มเหลว: ไม่สามารถตรวจสอบเครือข่ายได้ — กรุณาเชื่อมต่อออฟฟิศ (${REQUIRED_SSID})`);
+      setStatusMessage('ตรวจสอบไม่ผ่าน: ไม่สามารถยืนยันเครือข่ายได้ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
     } finally {
       setIsVerifying(false);
     }
@@ -63,7 +61,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
 
   const handleAction = async (type: 'IN' | 'OUT') => {
     if (verificationStatus !== 'SUCCESS') {
-      showAlert(`กรุณาเชื่อมต่อและตรวจสอบสิทธิ์ผ่าน WiFi "${REQUIRED_SSID}" ก่อนทำรายการ`);
+      showAlert('กรุณาเชื่อมต่อ WiFi ออฟฟิศ แล้วกด "ตรวจสอบเครือข่าย WiFi" ให้ผ่านก่อนลงเวลา');
       return;
     }
     try {
@@ -111,7 +109,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
                 <div className="text-left">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ระบบตรวจสอบเครือข่ายไร้สาย</p>
                   <p className="text-xs font-bold text-gray-700 leading-tight">
-                    {statusMessage || `พร้อมตรวจสอบ WiFi: ${REQUIRED_SSID}`}
+                    {statusMessage || 'ลงเวลาได้เฉพาะเมื่อเชื่อมต่อ WiFi ออฟฟิศ — กดปุ่มด้านล่างเพื่อตรวจสอบ'}
                   </p>
                 </div>
               </div>
@@ -121,7 +119,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
                 disabled={isVerifying}
                 className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm disabled:opacity-50"
               >
-                {isVerifying ? 'กำลังสแกนเครือข่าย...' : 'ตรวจสอบเครือข่าย WiFi'}
+                {isVerifying ? 'กำลังตรวจสอบ...' : 'ตรวจสอบเครือข่าย WiFi'}
               </button>
             </div>
           </div>
@@ -152,7 +150,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
           ความปลอดภัยเครือข่าย
         </h4>
         <p className="text-xs text-blue-700 font-medium leading-relaxed">
-          ระบบนี้ใช้การตรวจสอบผ่าน WiFi <strong>{REQUIRED_SSID}</strong> ของบริษัทเพื่อยืนยันว่าพนักงานปฏิบัติงานอยู่ในพื้นที่ที่กำหนด หากท่านใช้งานผ่านเว็บเบราว์เซอร์และมีการแจ้งเตือนว่าไม่พบเครือข่าย กรุณาตรวจสอบว่าท่านไม่ได้ใช้งาน VPN หรือ Mobile Hotspot อยู่ในขณะทำรายการ
+          ลงเวลาได้เฉพาะเมื่อเชื่อมต่อ <strong>WiFi ออฟฟิศ</strong> เท่านั้น ระบบจะตรวจสอบเครือข่ายก่อนลงเวลา — ถ้าไม่อยู่บนเครือข่ายออฟฟิศจะตรวจสอบไม่ผ่านและไม่สามารถลงเวลาได้ กรุณาตรวจสอบว่าไม่ได้ใช้ VPN หรือ Mobile Hotspot ขณะลงเวลา
         </p>
       </div>
     </div>

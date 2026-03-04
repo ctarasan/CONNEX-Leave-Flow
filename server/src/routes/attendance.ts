@@ -19,18 +19,19 @@ function getClientIp(req: { ip?: string; socket?: { remoteAddress?: string }; he
 
 /**
  * ตรวจว่า IP อยู่ในเครือข่ายออฟฟิศหรือไม่
- * OFFICE_IP_RANGES = ค่าใน env (เช่น "192.168.,10.0.,1.2.3.4") คั่นด้วย comma
- * ถ้าไม่ตั้งค่า = อนุญาตทั้งหมด ( backward compatibility )
+ * OFFICE_IP_RANGES = ช่วง IP ของ router WiFi ออฟฟิศ (เช่น "192.168.1.,10.0.0.") คั่นด้วย comma
+ * ถ้าไม่ตั้งค่า หรือตั้งค่าว่าง = ไม่อนุญาตลงเวลา (ต้องเชื่อมต่อ WiFi ออฟฟิศเท่านั้น)
  */
 function isAllowedOfficeNetwork(clientIp: string): boolean {
   const raw = process.env.OFFICE_IP_RANGES;
-  if (!raw || !clientIp) return true;
+  if (!clientIp) return false;
+  if (!raw) return false;
   const ranges = String(raw).split(',').map(s => s.trim()).filter(Boolean);
-  if (ranges.length === 0) return true;
+  if (ranges.length === 0) return false;
   return ranges.some(r => clientIp === r || clientIp.startsWith(r));
 }
 
-/** GET /api/attendance/verify-network — ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ (สำหรับปุ่ม "ตรวจสอบเครือข่าย WiFi") */
+/** GET /api/attendance/verify-network — ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ */
 router.get('/verify-network', (req, res) => {
   const clientIp = getClientIp(req);
   const allowed = isAllowedOfficeNetwork(clientIp);
@@ -66,7 +67,7 @@ router.post('/', async (req, res) => {
     const clientIp = getClientIp(req);
     if (!isAllowedOfficeNetwork(clientIp)) {
       return res.status(403).json({
-        error: 'ไม่อนุญาต: กรุณาลงเวลาจากเครือข่ายออฟฟิศ (WiFi/เครือข่ายภายในบริษัท) เท่านั้น',
+        error: 'ไม่อนุญาต: กรุณาเชื่อมต่อ WiFi ออฟฟิศก่อนลงเวลา — ลงเวลาได้เฉพาะเมื่ออยู่บนเครือข่ายออฟฟิศเท่านั้น',
         code: 'NETWORK_NOT_ALLOWED',
       });
     }
