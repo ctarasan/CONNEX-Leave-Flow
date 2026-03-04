@@ -49,13 +49,25 @@ export function clearToken(): void {
   sessionStorage.removeItem(TOKEN_KEY);
 }
 
+/** Event name เมื่อ backend ตอบ 401 เพราะ user ไป login ที่ device อื่น (ให้ device นี้แสดง alert และ logout) */
+export const SESSION_REPLACED_EVENT = 'sessionReplaced';
+
 async function fetchWithAuth(url: string, init: RequestInit = {}): Promise<Response> {
   const token = getToken();
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(url, { ...init, headers });
-  if (res.status === 401) clearToken();
+  if (res.status === 401) {
+    clearToken();
+    res.clone().json().then((data: Record<string, unknown>) => {
+      if (data?.code === 'SESSION_REPLACED') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(SESSION_REPLACED_EVENT));
+        }
+      }
+    }).catch(() => {});
+  }
   return res;
 }
 

@@ -8,7 +8,7 @@ import holidaysRouter from './routes/holidays.js';
 import authRouter from './routes/auth.js';
 import attendanceRouter from './routes/attendance.js';
 import notificationsRouter from './routes/notifications.js';
-import { optionalAuth } from './middleware/auth.js';
+import { optionalAuth, checkSession } from './middleware/auth.js';
 import { checkConnection } from './db.js';
 
 const app = express();
@@ -22,6 +22,7 @@ app.use((_req, res, next) => {
 });
 
 app.use(optionalAuth);
+app.use(checkSession);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, message: 'Backend is running' });

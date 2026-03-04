@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId } from './store';
-import { isApiMode, getBackendStatus, getApiBase } from './api';
+import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT } from './api';
 import LeaveForm from './components/LeaveForm';
 import ApprovalBoard from './components/ApprovalBoard';
 import NotificationCenter from './components/NotificationCenter';
@@ -20,7 +20,7 @@ import { useAlert } from './AlertContext';
 const DEFAULT_DASHBOARD_LEAVE_IDS = ['SICK', 'VACATION', 'PERSONAL'];
 
 const App: React.FC = () => {
-  const { showConfirm } = useAlert();
+  const { showConfirm, showAlert } = useAlert();
   const [currentUser, setCurrentUser] = useState<User | null>(getInitialUser());
   const [apiLoading, setApiLoading] = useState(isApiMode());
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
@@ -172,6 +172,17 @@ const App: React.FC = () => {
   useEffect(() => {
     document.title = APP_TITLE_WITH_VERSION;
   }, []);
+
+  useEffect(() => {
+    if (!isApiMode()) return;
+    const onSessionReplaced = () => {
+      logoutUser();
+      setCurrentUser(null);
+      showAlert('คุณได้เข้าสู่ระบบจากอุปกรณ์อื่น จึงออกจากระบบบนอุปกรณ์นี้แล้ว');
+    };
+    window.addEventListener(SESSION_REPLACED_EVENT, onSessionReplaced);
+    return () => window.removeEventListener(SESSION_REPLACED_EVENT, onSessionReplaced);
+  }, [showAlert]);
 
   useEffect(() => {
     if (activeTab === 'report') {

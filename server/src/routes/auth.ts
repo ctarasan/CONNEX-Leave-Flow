@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { pool } from '../db.js';
 import { rowToCamel } from '../util.js';
 import { signToken } from '../middleware/auth.js';
@@ -71,7 +72,13 @@ router.post('/login', async (req, res) => {
       sterilization: sterilization_quota || 0,
       paternity: paternity_quota || 0,
     };
-    const token = signToken({ id: row.id, role: row.role, email: row.email as string });
+    const sessionId = crypto.randomUUID();
+    const token = signToken({ id: row.id, role: row.role, email: row.email as string, sessionId });
+    await pool.query(
+      `INSERT INTO user_sessions (user_id, session_id, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET session_id = $2, updated_at = NOW()`,
+      [row.id, sessionId]
+    );
     res.json({ user: out, token });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
