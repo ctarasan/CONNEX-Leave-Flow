@@ -43,13 +43,47 @@ router.post('/login', async (req, res) => {
     // #region agent log
     fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:login', message: 'login attempt', data: { emailLength: emailTrimmed.length, passwordLength: String(password).length }, timestamp: Date.now(), hypothesisId: 'H2,H3' }) }).catch(() => {});
     // #endregion
-    // ใช้ query ที่ใช้ได้กับ init-supabase (users มีเฉพาะ id, name, email, password_hash, role, gender, department, join_date, manager_id, quotas JSONB)
-    const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash, COALESCE(quotas, '{}'::jsonb) as quotas
-       FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
-      [emailTrimmed]
-    );
-    const row = rows[0] as { password_hash: string; id: string; role: string; quotas?: Record<string, number>; [k: string]: unknown } | undefined;
+    // รองรับหลาย schema: (1) มี quotas JSONB (init-supabase) (2) มี sick_quota, personal_quota แยก (migration 001) (3) มีแค่คอลัมน์พื้นฐาน
+    let rows: { rows: unknown[] };
+    try {
+      rows = await pool.query(
+        `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash, COALESCE(quotas, '{}'::jsonb) as quotas
+         FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+        [emailTrimmed]
+      );
+    } catch (qErr) {
+      const msg = qErr instanceof Error ? qErr.message : '';
+      if (msg.includes('quotas') || msg.includes('column')) {
+        try {
+          rows = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash,
+             sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+        } catch (qErr2) {
+          const m2 = qErr2 instanceof Error ? qErr2.message : '';
+          if (m2.includes('sick_quota') || m2.includes('column')) {
+            rows = await pool.query(
+              `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash
+               FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+              [emailTrimmed]
+            );
+          } else {
+            throw qErr2;
+          }
+        }
+      } else {
+        throw qErr;
+      }
+    }
+    const row = rows.rows[0] as {
+      password_hash: string; id: string; role: string;
+      quotas?: Record<string, number>;
+      sick_quota?: number; personal_quota?: number; vacation_quota?: number; ordination_quota?: number;
+      military_quota?: number; maternity_quota?: number; sterilization_quota?: number; paternity_quota?: number;
+      [k: string]: unknown;
+    } | undefined;
     if (!row) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
@@ -59,12 +93,21 @@ router.post('/login', async (req, res) => {
     if (!ok) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
-    const { password_hash: _, quotas: quotasJson, ...user } = row;
+    const { password_hash: _, quotas: quotasJson, sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, ...user } = row;
     const out = rowToCamel(user as Record<string, unknown>) as Record<string, unknown>;
     out.password = '';
     const q = quotasJson && typeof quotasJson === 'object'
       ? { sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0, other: 0, ...quotasJson }
-      : { sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0 };
+      : {
+          sick: sick_quota ?? 0,
+          personal: personal_quota ?? 0,
+          vacation: vacation_quota ?? 0,
+          ordination: ordination_quota ?? 0,
+          military: military_quota ?? 0,
+          maternity: maternity_quota ?? 0,
+          sterilization: sterilization_quota ?? 0,
+          paternity: paternity_quota ?? 0,
+        };
     out.quotas = q;
     const sessionId = crypto.randomUUID();
     const token = signToken({ id: row.id, role: row.role, email: row.email as string, sessionId });
