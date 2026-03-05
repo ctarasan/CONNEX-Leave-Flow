@@ -31,8 +31,17 @@ function isAllowedOfficeNetwork(clientIp: string): boolean {
   return ranges.some(r => clientIp === r || clientIp.startsWith(r));
 }
 
+/** ถ้าตั้งเป็น true หรือ 1 = ปลดล็อคการตรวจ IP — ลงเวลาได้ทุกเครือข่าย */
+function isAttendanceAnyIpAllowed(): boolean {
+  const v = process.env.ALLOW_ATTENDANCE_ANY_IP;
+  return v === 'true' || v === '1';
+}
+
 /** GET /api/attendance/verify-network — ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ */
 router.get('/verify-network', (req, res) => {
+  if (isAttendanceAnyIpAllowed()) {
+    return res.json({ allowed: true });
+  }
   const clientIp = getClientIp(req);
   const allowed = isAllowedOfficeNetwork(clientIp);
   res.json({ allowed, clientIp: allowed ? undefined : clientIp });
@@ -64,12 +73,14 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const clientIp = getClientIp(req);
-    if (!isAllowedOfficeNetwork(clientIp)) {
-      return res.status(403).json({
-        error: 'ไม่อนุญาต: กรุณาเชื่อมต่อ WiFi ออฟฟิศก่อนลงเวลา — ลงเวลาได้เฉพาะเมื่ออยู่บนเครือข่ายออฟฟิศเท่านั้น',
-        code: 'NETWORK_NOT_ALLOWED',
-      });
+    if (!isAttendanceAnyIpAllowed()) {
+      const clientIp = getClientIp(req);
+      if (!isAllowedOfficeNetwork(clientIp)) {
+        return res.status(403).json({
+          error: 'ไม่อนุญาต: กรุณาเชื่อมต่อ WiFi ออฟฟิศก่อนลงเวลา — ลงเวลาได้เฉพาะเมื่ออยู่บนเครือข่ายออฟฟิศเท่านั้น',
+          code: 'NETWORK_NOT_ALLOWED',
+        });
+      }
     }
 
     const { userId, type, date, checkIn, checkOut } = req.body;
