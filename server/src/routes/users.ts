@@ -5,31 +5,47 @@ import { rowToCamel } from '../util.js';
 
 const router = Router();
 
+const defaultQuotas = () => ({ sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0 });
+
 router.get('/', async (_req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
-        sick_quota, personal_quota, vacation_quota, ordination_quota, 
-        military_quota, maternity_quota, sterilization_quota, paternity_quota
-      FROM users ORDER BY id`
-    );
+    let rows: Record<string, unknown>[];
+    try {
+      const r = await pool.query(
+        `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+          sick_quota, personal_quota, vacation_quota, ordination_quota,
+          military_quota, maternity_quota, sterilization_quota, paternity_quota
+        FROM users ORDER BY id`
+      );
+      rows = r.rows as Record<string, unknown>[];
+    } catch (qErr) {
+      const msg = qErr instanceof Error ? qErr.message : '';
+      if (msg.includes('sick_quota') || msg.includes('quotas') || msg.includes('column')) {
+        const r = await pool.query(
+          `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId"
+           FROM users ORDER BY id`
+        );
+        rows = (r.rows as Record<string, unknown>[]).map(row => ({ ...row, quotas: {} }));
+      } else {
+        throw qErr;
+      }
+    }
     const list = rows.map((r: Record<string, unknown>) => {
-      const { sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, ...rest } = r;
+      const { sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, quotas: quotasJson, ...rest } = r;
       const o = rowToCamel(rest);
-      return { 
-        ...o, 
-        password: '',
-        quotas: {
-          sick: sick_quota || 0,
-          personal: personal_quota || 0,
-          vacation: vacation_quota || 0,
-          ordination: ordination_quota || 0,
-          military: military_quota || 0,
-          maternity: maternity_quota || 0,
-          sterilization: sterilization_quota || 0,
-          paternity: paternity_quota || 0,
-        }
-      };
+      const q = quotasJson && typeof quotasJson === 'object' && !Array.isArray(quotasJson)
+        ? { ...defaultQuotas(), ...quotasJson as Record<string, number> }
+        : {
+            sick: (sick_quota as number) ?? 0,
+            personal: (personal_quota as number) ?? 0,
+            vacation: (vacation_quota as number) ?? 0,
+            ordination: (ordination_quota as number) ?? 0,
+            military: (military_quota as number) ?? 0,
+            maternity: (maternity_quota as number) ?? 0,
+            sterilization: (sterilization_quota as number) ?? 0,
+            paternity: (paternity_quota as number) ?? 0,
+          };
+      return { ...o, password: '', quotas: q };
     });
     res.json(list);
   } catch (err) {
