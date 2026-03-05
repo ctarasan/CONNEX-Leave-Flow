@@ -7,19 +7,6 @@ import { signToken } from '../middleware/auth.js';
 
 const router = Router();
 
-/** ดึง IP ของ client (รองรับ proxy/Vercel) */
-function getClientIp(req: { ip?: string; socket?: { remoteAddress?: string }; headers?: Record<string, string | string[] | undefined> }): string {
-  const forwarded = req.headers?.['x-forwarded-for'];
-  if (forwarded) {
-    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    return (typeof first === 'string' ? first : '').split(',')[0].trim() || '';
-  }
-  const realIp = req.headers?.['x-real-ip'];
-  if (realIp) return (Array.isArray(realIp) ? realIp[0] : realIp) || '';
-  if (req.ip) return req.ip;
-  return req.socket?.remoteAddress ?? '';
-}
-
 /** เช็กว่ามี user ตามอีเมลหรือไม่ (ใช้ยืนยันว่า Backend ชี้ไปที่ DB เดียวกับที่คุณดูใน Supabase) */
 router.get('/check-email', async (req, res) => {
   try {
@@ -81,13 +68,11 @@ router.post('/login', async (req, res) => {
     out.quotas = q;
     const sessionId = crypto.randomUUID();
     const token = signToken({ id: row.id, role: row.role, email: row.email as string, sessionId });
-    const clientIp = getClientIp(req);
-    const userAgent = (req.headers && (req.headers['user-agent'] as string)) || '';
     try {
       await pool.query(
-        `INSERT INTO user_sessions (user_id, session_id, ip_address, user_agent, updated_at) VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET session_id = $2, ip_address = $3, user_agent = $4, updated_at = NOW()`,
-        [row.id, sessionId, clientIp || null, userAgent || null]
+        `INSERT INTO user_sessions (user_id, session_id, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET session_id = $2, updated_at = NOW()`,
+        [row.id, sessionId]
       );
     } catch (sessionErr) {
       // ตาราง user_sessions อาจยังไม่มี (ยังไม่รัน migration 003) — ให้ login ผ่านไปก่อน
