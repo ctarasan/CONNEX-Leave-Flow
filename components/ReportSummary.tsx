@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import { LeaveRequest, User, UserRole } from '../types';
 import { HOLIDAYS_2026 } from '../constants';
 import { getAllUsers, getLeaveTypes, getSubordinateIdSetRecursive, getLeaveRequests, getSubordinateIdsRecursive, loadLeaveRequestsForManager } from '../store';
@@ -352,28 +352,47 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
         {filteredRequests.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
             <div className="h-[350px] w-full">
-              <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 text-center">การกระจายตัวประเภทการลา</p>
+              <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 text-center">พนักงานที่ลาสูงสุด 5 คนแรก (แยกตามประเภทการลา)</p>
+              {pivotData.length === 0 ? (
+                <div className="h-full flex items-center justify-center rounded-2xl bg-gray-50 border border-gray-100">
+                  <p className="text-gray-400 font-bold italic text-sm">ไม่พบข้อมูลวันลาในช่วงที่เลือก</p>
+                </div>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={stats}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="count"
-                  >
-                    {stats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
+                <BarChart
+                  data={pivotData.slice(0, 5).map((row) => ({
+                    userName: row.userName,
+                    ...row.byType,
+                  }))}
+                  layout="vertical"
+                  margin={{ top: 8, right: 24, left: 80, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f3f4f6" />
+                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} unit=" วัน" />
+                  <YAxis type="category" dataKey="userName" width={76} axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700 }} />
+                  <Tooltip
                     contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value: number, name: string) => [
+                      value ? `${Number(value).toFixed(1)} วัน` : '0 วัน',
+                      leaveTypes.find((t) => t.id === name)?.label ?? name,
+                    ]}
+                    labelFormatter={(label) => label}
                   />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
+                  {leaveTypes.map((lt, index) => (
+                    <Bar
+                      key={lt.id}
+                      dataKey={lt.id}
+                      name={lt.label}
+                      stackId="leave"
+                      fill={COLORS[index % COLORS.length]}
+                      radius={[0, 4, 4, 0]}
+                    />
+                  ))}
+                </BarChart>
               </ResponsiveContainer>
+              )}
+              <p className="text-[10px] text-gray-400 text-center mt-2">ตามช่วงเดือน/ปีที่เลือกในรายงานด้านล่าง</p>
             </div>
 
             <div className="h-[350px] w-full">
