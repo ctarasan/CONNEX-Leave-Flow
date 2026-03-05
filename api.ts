@@ -3,9 +3,22 @@
  * Multi-user: หลัง login เก็บ token ใน sessionStorage และส่งใน Authorization ทุก request
  */
 
-const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-  ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '')
-  : '';
+const BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+
+function getEffectiveApiBase(): string {
+  const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
+    ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '')
+    : '';
+  if (typeof window !== 'undefined' && window.location?.hostname === 'connex-leave-flow.vercel.app') {
+    const origin = window.location.origin.replace(/\/$/, '');
+    if (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app')) {
+      return BACKEND_URL;
+    }
+  }
+  return fromEnv;
+}
+
+const API_BASE = getEffectiveApiBase();
 
 const TOKEN_KEY = 'hr_api_token';
 

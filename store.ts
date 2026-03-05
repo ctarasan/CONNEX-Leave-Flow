@@ -42,11 +42,8 @@ const STORAGE_KEYS = {
   LEAVE_TYPES: 'hr_leave_types',
 };
 
-/** ถ้ามีค่า = ใช้ Backend API (Supabase) — อ่าน/เขียนจาก DB แทน localStorage */
-const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-  ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '')
-  : '';
-const isApiMode = () => !!API_BASE;
+/** ถ้ามีค่า = ใช้ Backend API (Supabase) — อ่าน/เขียนจาก DB แทน localStorage (ใช้ getApiBase จาก api เพื่อให้ fallback โดเมน Backend ทำงาน) */
+const isApiMode = () => !!api.getApiBase();
 
 /** Cache สำหรับโหมด API (multi-user: ข้อมูลจาก Supabase) */
 let _leaveTypesCache: LeaveTypeDefinition[] | null = null;

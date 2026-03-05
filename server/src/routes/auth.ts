@@ -56,52 +56,66 @@ router.post('/login', async (req, res) => {
     // #region agent log
     fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:login', message: 'login attempt', data: { emailLength: emailTrimmed.length, passwordLength: String(password).length }, timestamp: Date.now(), hypothesisId: 'H2,H3' }) }).catch(() => {});
     // #endregion
+    // รองรับทั้ง schema ที่มี quotas (JSONB) และ schema ที่มี sick_quota, personal_quota แยกคอลัมน์
     const { rows } = await pool.query(
       `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", 
+        password_hash, 
+        COALESCE(quotas, '{}'::jsonb) as quotas,
         sick_quota, personal_quota, vacation_quota, ordination_quota, 
-        military_quota, maternity_quota, sterilization_quota, paternity_quota,
-        password_hash 
+        military_quota, maternity_quota, sterilization_quota, paternity_quota
       FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
       [emailTrimmed]
-    );
-    const row = rows[0] as { password_hash: string; id: string; role: string; [k: string]: unknown } | undefined;
-    // #region agent log
-    fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:afterQuery', message: 'user lookup', data: { hasUser: !!row, userId: row?.id }, timestamp: Date.now(), hypothesisId: 'H2,H3' }) }).catch(() => {});
-    // #endregion
+    ).catch(async (qErr) => {
+      const msg = qErr instanceof Error ? qErr.message : '';
+      if (msg.includes('sick_quota') || msg.includes('column')) {
+        return pool.query(
+          `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash, COALESCE(quotas, '{}'::jsonb) as quotas
+           FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+          [emailTrimmed]
+        );
+      }
+      throw qErr;
+    });
+    const row = rows[0] as { password_hash: string; id: string; role: string; quotas?: Record<string, number>; sick_quota?: number; [k: string]: unknown } | undefined;
     if (!row) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
     const passwordTrimmed = String(password).trim();
     const hashFromDb = (row.password_hash ?? '').toString().trim();
     const ok = hashFromDb ? await bcrypt.compare(passwordTrimmed, hashFromDb) : false;
-    // #region agent log
-    fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:compare', message: 'bcrypt compare result', data: { compareOk: ok }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
-    // #endregion
     if (!ok) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
-    const { password_hash: _, sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, ...user } = row;
+    const { password_hash: _, quotas: quotasJson, sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, ...user } = row;
     const out = rowToCamel(user as Record<string, unknown>) as Record<string, unknown>;
     out.password = '';
-    out.quotas = {
-      sick: sick_quota || 0,
-      personal: personal_quota || 0,
-      vacation: vacation_quota || 0,
-      ordination: ordination_quota || 0,
-      military: military_quota || 0,
-      maternity: maternity_quota || 0,
-      sterilization: sterilization_quota || 0,
-      paternity: paternity_quota || 0,
-    };
+    const q = quotasJson && typeof quotasJson === 'object'
+      ? { sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0, other: 0, ...quotasJson }
+      : {
+          sick: sick_quota ?? 0,
+          personal: personal_quota ?? 0,
+          vacation: vacation_quota ?? 0,
+          ordination: ordination_quota ?? 0,
+          military: military_quota ?? 0,
+          maternity: maternity_quota ?? 0,
+          sterilization: sterilization_quota ?? 0,
+          paternity: paternity_quota ?? 0,
+        };
+    out.quotas = q;
     const sessionId = crypto.randomUUID();
     const token = signToken({ id: row.id, role: row.role, email: row.email as string, sessionId });
     const clientIp = getClientIp(req);
     const userAgent = (req.headers && (req.headers['user-agent'] as string)) || '';
-    await pool.query(
-      `INSERT INTO user_sessions (user_id, session_id, ip_address, user_agent, updated_at) VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET session_id = $2, ip_address = $3, user_agent = $4, updated_at = NOW()`,
-      [row.id, sessionId, clientIp || null, userAgent || null]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO user_sessions (user_id, session_id, ip_address, user_agent, updated_at) VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET session_id = $2, ip_address = $3, user_agent = $4, updated_at = NOW()`,
+        [row.id, sessionId, clientIp || null, userAgent || null]
+      );
+    } catch (sessionErr) {
+      // ตาราง user_sessions อาจยังไม่มี (ยังไม่รัน migration 003) — ให้ login ผ่านไปก่อน
+      console.warn('[auth] user_sessions insert failed:', sessionErr instanceof Error ? sessionErr.message : sessionErr);
+    }
     res.json({ user: out, token });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

@@ -1,5 +1,82 @@
 # วิธีตรวจสอบว่า App ติดต่อกับ DB (Supabase) เรียบร้อย
 
+**ถ้า deploy บน Vercel และรหัสผ่านใน DATABASE_URL ตรงกับ Supabase แล้วแต่ยังต่อไม่ได้** → ดูรายการตรวจสอบแบบละเอียดใน **`docs/DEPLOY_VERCEL_SUPABASE.md`** หัวข้อ **"รหัสผ่านใน Supabase กับ DATABASE_URL ตรงกันแล้ว แต่ยังต่อ DB ไม่ได้"**
+
+---
+
+## อยู่ๆ ติดต่อฐานข้อมูลไม่ได้ — ดูสาเหตุจริงที่ไหน
+
+1. **บนหน้า Login (แถบแดง)**  
+   ใต้ข้อความ "ติดต่อฐานข้อมูลไม่ได้" จะมีบรรทัด **"สาเหตุ: ..."** — อ่านข้อความนั้น (เช่น `Backend is running but DB failed: password authentication failed` หรือ `ENOTFOUND`)
+
+2. **เปิด URL โดยตรงในเบราว์เซอร์**  
+   - รันบนเครื่อง: เปิด **http://localhost:3002/api/status** (ใช้พอร์ตตามที่ Backend รัน เช่น 3002)  
+   - Deploy บน Vercel: เปิด **https://&lt;backend-url&gt;/api/status**  
+   จะได้ JSON เช่น `{"server":true,"database":false,"message":"Backend is running but DB failed: ..."}` — ข้อความหลัง **DB failed:** คือสาเหตุจริง
+
+3. **รัน Backend บนเครื่องแล้วดูเทอร์มินัล**  
+   `cd server` แล้ว `npm run dev` — ถ้าต่อ DB ไม่ได้จะขึ้น `[ERROR] Database connection failed: <ข้อความ error>`
+
+### สาเหตุที่พบบ่อยเมื่อ “อยู่ๆ ต่อไม่ได้”
+
+| สาเหตุ | วิธีเช็ก/แก้ |
+|--------|----------------|
+| **Supabase โปรเจกต์ถูก Pause** (ฟรี tier ถูกพักหลังไม่ใช้หลายวัน) | Supabase → Project Settings → General → **Project availability** → กด **Restore** |
+| **Backend ไม่ได้รัน** (รันบนเครื่อง) | ในโฟลเดอร์ `server` รัน `npm run dev` แล้วรีเฟรชแอป |
+| **ไม่มีไฟล์ `server/.env` หรือไม่มี DATABASE_URL** | คัดลอกจาก `server/.env.example` เป็น `server/.env` แล้วใส่ค่า DATABASE_URL จริงจาก Supabase |
+| **รหัสผ่าน DB ถูกเปลี่ยนใน Supabase** | ไปที่ Supabase → Project Settings → Database → Reset password แล้วอัปเดตค่าใน `server/.env` (หรือ Vercel env) แล้วรัน Backend ใหม่ / Redeploy |
+| **Deploy บน Vercel แต่ยังไม่ Redeploy หลังแก้ env** | แก้ Environment Variables แล้วต้องไป Deployments → Redeploy โปรเจกต์ Backend |
+| **ใช้โฮสต์ Direct (db.xxx.supabase.co) บน Vercel** | ใช้ Connection string แบบ **Session pooler** (โฮสต์ `aws-0-...pooler.supabase.com`, พอร์ต 6543) — ดู `docs/DEPLOY_VERCEL_SUPABASE.md` |
+| **SASL authentication failed** (รัน `npx tsx src/test-db.ts` แล้วขึ้นแบบนี้) | มักเป็น (1) **โปรเจกต์ Supabase ถูก Pause** → ไปเช็กและกด Restore ก่อน (2) หรือรหัสผ่านใน `DATABASE_URL` ไม่ตรงกับ Supabase → ดูหัวข้อ **"แก้ SASL authentication failed"** |
+
+### แก้ SASL authentication failed
+
+ข้อความนี้แปลว่า **ล็อกอินเข้า PostgreSQL ถูกปฏิเสธ**  
+
+**ถ้าเมื่อไม่นานนี้ยังใช้ได้อยู่และไม่ได้แก้รหัสผ่าน:** ให้เช็กก่อนว่าโปรเจกต์ Supabase **ถูก Pause** หรือไม่  
+→ เปิด Supabase → เลือกโปรเจกต์ → **Project Settings** → **General** → **Project availability**  
+ถ้าขึ้นว่า Paused / Inactive ให้กด **Restore** รอสักครู่แล้วลองรัน `npx tsx src/test-db.ts` อีกครั้ง  
+
+ถ้าไม่ได้ Pause หรือ Restore แล้วยังขึ้น SASL อยู่ แก้ตามด้านล่าง:
+
+1. **เอารหัสผ่าน DB ล่าสุดจาก Supabase**  
+   - เปิด [Supabase](https://supabase.com) → โปรเจกต์ของคุณ  
+   - **Project Settings** → **Database**  
+   - ที่ **Database password** ถ้าจำไม่ได้ให้กด **Reset database password** แล้วตั้งรหัสผ่านใหม่ (เก็บไว้ใช้ในขั้นถัดไป)
+
+2. **อัปเดต `server/.env`**  
+   - เปิดไฟล์ `server/.env`  
+   - แก้ `DATABASE_URL` ให้ใช้รหัสผ่านที่ตรงกับ Supabase  
+   - ถ้ารหัสผ่านมี **อักขระพิเศษ** (`@`, `#`, `:`, `/`, `%` ฯลฯ) ต้อง **encode** ก่อนใส่ใน URL:
+     - `@` → `%40`
+     - `#` → `%23`
+     - `:` → `%3A`
+     - `/` → `%2F`
+     - `%` → `%25`
+
+3. **ใช้ Connection string จาก Supabase โดยตรง (แนะนำ)**  
+   - ใน Supabase → **Project Settings** → **Database**  
+   - หัวข้อ **Connection string** เลือกแบบ **URI**  
+   - เลือกโหมด **Session** หรือ **Transaction** (พอร์ต 5432 หรือ 6543)  
+   - กด **Copy** แล้ววางทั้งเส้นลงใน `DATABASE_URL` ใน `server/.env` (แทนที่รหัสผ่าน `[YOUR-PASSWORD]` ใน URL ด้วยรหัสผ่านจริง ถ้ามีอักขระพิเศษให้ encode ตามข้อ 2)
+
+4. **ทดสอบอีกครั้ง**  
+   ```bash
+   cd server
+   npx tsx src/test-db.ts
+   ```  
+   ถ้าสำเร็จจะขึ้น `[OK] Database connected.`
+
+### ยังคงขึ้น "ติดต่อฐานข้อมูลไม่ได้" — เช็กรายการนี้
+
+1. **มีไฟล์ `server/.env` หรือไม่** — ถ้าไม่มี ให้คัดลอก `server/.env.example` เป็น `server/.env` แล้วแก้ค่า
+2. **ใน `server/.env`** — `DATABASE_URL` ต้องเป็นบรรทัดเดียว ไม่มีช่องว่างหน้า/หลัง ไม่มีเครื่องหมายคำพูดรอบค่า
+3. **ใช้ Connection string แบบ Session Pooler** — โฮสต์ `aws-0-xxx.pooler.supabase.com`, Username `postgres.xxxxx`, พอร์ต 6543 (ใน Supabase → Database → Connect → Method: **Session** → Copy URI)
+4. **รหัสผ่าน** — ถ้ายัง SASL: Reset database password ใน Supabase เป็นตัวอักษร+ตัวเลขอย่างเดียว แล้วใส่รหัสใหม่ใน URI ใน `.env`
+5. **ตรวจรูปแบบ** — รัน `cd server` แล้ว `npx tsx src/check-db-url.ts` ดูโฮสต์เป็น pooler และ Username เป็น postgres.xxx
+
+---
+
 ## 1. ตรวจว่า Backend ต่อ DB ได้
 
 ### วิธีที่ 1: ดูตอนรัน Backend
