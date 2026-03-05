@@ -59,6 +59,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isError, setIsError] = useState(false);
   /** โหมด API: true = ติดต่อ Backend/DB ไม่ได้ (แสดงข้อความต่างจาก user/pass ผิด) */
   const [connectionError, setConnectionError] = useState(false);
+  /** ข้อความ error จริงจาก Backend (ใช้แสดงเมื่อ connectionError เพื่อช่วยดีบัก) */
+  const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
 
@@ -70,6 +72,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     if (isApiMode()) {
       setConnectionError(false);
+      setConnectionErrorMessage(null);
       apiLogin(email.trim(), password).then(({ user, token }) => {
         setAttempts(0);
         setToken(token);
@@ -83,6 +86,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           (err instanceof ApiError && (err.status >= 500 || err.status === 0)) ||
           /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|Failed to fetch|NetworkError|เซิร์ฟเวอร์ขัดข้อง|connection|timeout|ฐานข้อมูล|database/i.test(msg);
         setConnectionError(!!isDbOrNetwork);
+        setConnectionErrorMessage(msg || null);
         const next = attempts + 1;
         setAttempts(next);
         setIsError(true);
@@ -158,11 +162,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             {isError && (
-              <p className="text-red-500 text-xs text-center font-semibold">
-                {connectionError
-                  ? 'ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที'
-                  : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'}
-              </p>
+              <div className="text-red-500 text-xs text-center font-semibold">
+                <p>
+                  {connectionError
+                    ? 'ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที'
+                    : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'}
+                </p>
+                {connectionError && connectionErrorMessage && (
+                  <p className="mt-1 font-normal text-red-600 break-all">สาเหตุ: {connectionErrorMessage}</p>
+                )}
+              </div>
             )}
             {isError && isApiMode() && !connectionError && (
               <p className="text-[10px] text-gray-500 text-center mt-0.5">ตรวจสอบ: อีเมลตรงกับใน Supabase หรือไม่? รหัสผ่าน = ID พนักงาน (001, 002) ถ้าใช้ seed</p>
