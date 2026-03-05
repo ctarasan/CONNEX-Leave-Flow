@@ -34,7 +34,9 @@ function isAllowedOfficeNetwork(clientIp: string): boolean {
 /** ถ้าตั้งเป็น true หรือ 1 = ปลดล็อคการตรวจ IP — ลงเวลาได้ทุกเครือข่าย */
 function isAttendanceAnyIpAllowed(): boolean {
   const v = process.env.ALLOW_ATTENDANCE_ANY_IP;
-  return v === 'true' || v === '1';
+  if (!v) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
 }
 
 /** GET /api/attendance/verify-network — ตรวจว่า client อยู่บนเครือข่ายออฟฟิศหรือไม่ */
