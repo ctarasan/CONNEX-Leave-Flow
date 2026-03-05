@@ -1,10 +1,10 @@
 import { LeaveStatus } from './types';
 
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
-export const APP_VERSION = '1.0.10';
+export const APP_VERSION = '2.0.0';
 
 /** วันที่และเวลาที่ปรับแก้ล่าสุด (อัปเดตทุกครั้งที่ release) */
-export const APP_LAST_UPDATED = '5 มี.ค. 2569, 13:54 น.';
+export const APP_LAST_UPDATED = '4 มี.ค. 2568, 12:00 น.';
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
 export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}`;
