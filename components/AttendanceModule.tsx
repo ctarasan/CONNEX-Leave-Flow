@@ -13,6 +13,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   const { showAlert } = useAlert();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<'IDLE' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [statusMessage, setStatusMessage] = useState('');
@@ -67,11 +68,17 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   };
 
   const handleAction = async (type: 'IN' | 'OUT') => {
-    if (verificationStatus !== 'SUCCESS') {
+    const hasCheckedInToday = !!todayRecord?.checkIn;
+    if (type === 'IN' && verificationStatus !== 'SUCCESS') {
       showAlert('กรุณาเชื่อมต่อ WiFi ออฟฟิศ แล้วกด "ตรวจสอบเครือข่าย WiFi" ให้ผ่านก่อนลงเวลา');
       return;
     }
+    if (type === 'OUT' && !hasCheckedInToday) {
+      showAlert('ต้องเช็คอินก่อนจึงจะเช็คเอาท์ได้');
+      return;
+    }
     try {
+      setIsSubmitting(true);
       const result = saveAttendance(user.id, type);
       const record = typeof (result as Promise<unknown>)?.then === 'function'
         ? await (result as Promise<AttendanceRecord>)
@@ -82,6 +89,8 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
       showAlert(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -135,14 +144,14 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
           <div className="w-full md:w-72 space-y-4">
             <button 
               onClick={() => handleAction('IN')}
-              disabled={!!todayRecord?.checkIn || verificationStatus !== 'SUCCESS'}
+              disabled={!!todayRecord?.checkIn || verificationStatus !== 'SUCCESS' || isSubmitting}
               className="w-full h-24 bg-emerald-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คอิน (IN)
             </button>
             <button 
               onClick={() => handleAction('OUT')}
-              disabled={!todayRecord?.checkIn || !!todayRecord?.checkOut || verificationStatus !== 'SUCCESS'}
+              disabled={!todayRecord?.checkIn || !!todayRecord?.checkOut || isSubmitting}
               className="w-full h-24 bg-blue-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คเอาท์ (OUT)
