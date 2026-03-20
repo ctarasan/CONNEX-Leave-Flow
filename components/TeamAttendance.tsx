@@ -1,13 +1,27 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { User, UserRole } from '../types';
-import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive } from '../store';
+import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
+import { isApiMode } from '../api';
 
 interface TeamAttendanceProps {
   manager: User;
 }
 
 const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
+  const today = useMemo(() => new Date(), []);
+  const monthStart = useMemo(() => {
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  }, [today]);
+  const monthEnd = useMemo(() => {
+    const y = today.getFullYear();
+    const m = today.getMonth() + 1;
+    const last = new Date(y, m, 0).getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+  }, [today]);
+
   const allUsers = useMemo(() => getAllUsers(), []);
   const subordinates = useMemo(() => {
     if (manager.role === UserRole.ADMIN) return allUsers;
@@ -15,22 +29,34 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
     return allUsers.filter(u => subordinateSet.has(u.id));
   }, [allUsers, manager]);
 
+  const [reloadTick, setReloadTick] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [nameQuery, setNameQuery] = useState('');
+  const [startDate, setStartDate] = useState(monthStart);
+  const [endDate, setEndDate] = useState(monthEnd);
+
+  useEffect(() => {
+    if (!isApiMode() || subordinates.length === 0) return;
+    setIsLoading(true);
+    Promise.all(subordinates.map(s => loadAttendanceForUser(s.id)))
+      .finally(() => {
+        setReloadTick(t => t + 1);
+        setIsLoading(false);
+      });
+  }, [subordinates]);
+
   const teamRecords = useMemo(() => {
-    const allAttendance = getAttendanceRecords();
-    const subIds = subordinates.map(s => s.id);
+    const allAttendance = isApiMode()
+      ? subordinates.flatMap(s => getAttendanceRecords(s.id))
+      : getAttendanceRecords().filter(r => subordinates.some(s => s.id === r.userId));
     return allAttendance
-      .filter(r => subIds.includes(r.userId))
       .map(r => ({
         ...r,
         userName: subordinates.find(s => s.id === r.userId)?.name || 'Unknown',
         department: subordinates.find(s => s.id === r.userId)?.department || '-'
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [subordinates]);
-
-  const [nameQuery, setNameQuery] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  }, [subordinates, reloadTick]);
 
   const filteredRecords = useMemo(() => {
     const q = nameQuery.trim().toLowerCase();
@@ -192,6 +218,11 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             )}
           </tbody>
         </table>
+        {isLoading && (
+          <div className="px-6 py-4 text-center text-gray-500 text-xs font-bold">
+            กำลังโหลดข้อมูลการเข้างานของทีม...
+          </div>
+        )}
       </div>
     </div>
   );
