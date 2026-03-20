@@ -729,30 +729,32 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
     
     records.unshift(record);
   } else {
-    if (type === 'IN' && !record.checkIn) {
+    if (type === 'IN') {
+      // Allow rewriting today's check-in time when user presses IN again
       record.checkIn = timeStr;
       record.isLate = timeStr > lateThreshold;
       if (record.isLate && !record.penaltyApplied && user) {
-         const penaltyDays = calculateLatePenaltyDays(timeStr);
-         const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
-         user.quotas['VACATION'] = Math.max(0, vac - penaltyDays);
-         updateUser(user);
-         record.penaltyApplied = true;
-         createNotification({
-            userId,
-            title: 'แจ้งเตือนการเข้างานสาย',
-            message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
+        const penaltyDays = calculateLatePenaltyDays(timeStr);
+        const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
+        user.quotas['VACATION'] = Math.max(0, vac - penaltyDays);
+        updateUser(user);
+        record.penaltyApplied = true;
+        createNotification({
+          userId,
+          title: 'แจ้งเตือนการเข้างานสาย',
+          message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
+        });
+
+        if (user.managerId) {
+          createNotification({
+            userId: user.managerId,
+            title: 'แจ้งเตือนพนักงานเข้าสาย',
+            message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า ${penaltyDays} วัน)`,
           });
-          
-          if (user.managerId) {
-            createNotification({
-              userId: user.managerId,
-              title: 'แจ้งเตือนพนักงานเข้าสาย',
-              message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า ${penaltyDays} วัน)`,
-            });
-          }
+        }
       }
     } else if (type === 'OUT') {
+      // OUT can also be rewritten for today's record
       record.checkOut = timeStr;
     }
   }

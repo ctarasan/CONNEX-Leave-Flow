@@ -85,7 +85,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
         : result as AttendanceRecord;
       setRecords(getAttendanceRecords(user.id));
       onUpdate();
-      showAlert(type === 'IN' ? 'เช็คอินสำเร็จ (ผ่านเครือข่ายออฟฟิศ)' : 'เช็คเอาท์สำเร็จ');
+      showAlert(type === 'IN' ? 'บันทึกเวลาเช็คอินสำเร็จ' : 'บันทึกเวลาเช็คเอาท์สำเร็จ');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
       showAlert(msg);
@@ -144,7 +144,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
           <div className="w-full md:w-72 space-y-4">
             <button 
               onClick={() => handleAction('IN')}
-              disabled={!!todayRecord?.checkIn || verificationStatus !== 'SUCCESS' || isSubmitting}
+              disabled={verificationStatus !== 'SUCCESS' || isSubmitting}
               className="w-full h-24 bg-emerald-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คอิน (IN)
