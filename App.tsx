@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
-import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId } from './store';
+import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId, calculateLatePenaltyDays } from './store';
 import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT, getSessionCheck } from './api';
 import LeaveForm from './components/LeaveForm';
 import ApprovalBoard from './components/ApprovalBoard';
@@ -700,7 +700,7 @@ const App: React.FC = () => {
                             {rec.isLate ? (
                               <div className="flex flex-col items-end">
                                 <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded-lg text-[10px] font-black uppercase">มาสาย</span>
-                                <span className="text-[9px] text-rose-400 font-bold mt-1 tracking-tighter">หักพักร้อน 0.25 วัน</span>
+                                <span className="text-[9px] text-rose-400 font-bold mt-1 tracking-tighter">หักพักร้อน {calculateLatePenaltyDays(rec.checkIn)} วัน</span>
                               </div>
                             ) : (
                               <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-lg text-[10px] font-black uppercase">ปกติ</span>

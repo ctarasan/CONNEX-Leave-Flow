@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus } from '../types';
-import { getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests } from '../store';
+import { AttendanceLatePolicy, getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 
@@ -59,6 +59,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
   const [holidays, setHolidays] = useState<Record<string, string>>({});
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayName, setNewHolidayName] = useState('');
+  const [latePolicy, setLatePolicy] = useState<AttendanceLatePolicy>(getAttendanceLatePolicy());
 
   const refreshUsers = () => setUsers(getAllUsers());
 
@@ -66,7 +67,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
     refreshUsers();
     setHolidays(getHolidays());
     setLeaveTypes(getLeaveTypes());
+    setLatePolicy(getAttendanceLatePolicy());
   }, []);
+
+  const handleSaveLatePolicy = () => {
+    const normalized: AttendanceLatePolicy = {
+      lateAfter: latePolicy.lateAfter || '09:30:00',
+      severeLateAfter: latePolicy.severeLateAfter || '10:00:00',
+      penaltyNormal: Math.max(0, Number(latePolicy.penaltyNormal) || 0),
+      penaltySevere: Math.max(0, Number(latePolicy.penaltySevere) || 0),
+    };
+    saveAttendanceLatePolicy(normalized);
+    setLatePolicy(getAttendanceLatePolicy());
+    showAlert('บันทึกกติกาหักลาพักร้อนกรณีมาสายเรียบร้อยแล้ว');
+  };
 
   const handleEdit = (user: User) => {
     setEditingUser({ ...user, quotas: { ...user.quotas } });
@@ -410,6 +424,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
             </button>
           </div>
           <p className="text-xs text-gray-500 mb-4">กำหนดชื่อประเภท ใช้กับเพศใด และโควต้าวันต่อปี — พนักงานชายจะไม่เห็นประเภทที่ตั้งเป็นหญิงเท่านั้น (เช่น ลาคลอด)</p>
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
+            <h4 className="text-sm font-black text-indigo-900 mb-3">กติกาหักลาพักร้อนกรณีเข้างานสาย</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">เริ่มนับว่าสายหลังเวลา</label>
+                <input
+                  type="time"
+                  step={1}
+                  value={latePolicy.lateAfter}
+                  onChange={(e) => setLatePolicy(prev => ({ ...prev, lateAfter: e.target.value || '09:30:00' }))}
+                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">เริ่มใช้อัตราหักหนักหลังเวลา</label>
+                <input
+                  type="time"
+                  step={1}
+                  value={latePolicy.severeLateAfter}
+                  onChange={(e) => setLatePolicy(prev => ({ ...prev, severeLateAfter: e.target.value || '10:00:00' }))}
+                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">หักเมื่อสาย (วัน)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.25"
+                  value={latePolicy.penaltyNormal}
+                  onChange={(e) => setLatePolicy(prev => ({ ...prev, penaltyNormal: Number(e.target.value) }))}
+                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">หักเมื่อสายหนัก (วัน)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.25"
+                  value={latePolicy.penaltySevere}
+                  onChange={(e) => setLatePolicy(prev => ({ ...prev, penaltySevere: Number(e.target.value) }))}
+                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-[11px] text-indigo-700 font-medium">
+                ตัวอย่างปัจจุบัน: สายหลัง {latePolicy.lateAfter.slice(0, 5)} หัก {latePolicy.penaltyNormal} วัน, ถ้าเกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltySevere} วัน
+              </p>
+              <button
+                type="button"
+                onClick={handleSaveLatePolicy}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition"
+              >
+                บันทึกกติกา
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-gray-100">
             <table className="min-w-full text-sm">
               <thead>

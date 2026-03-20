@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { User, LeaveRequest, AttendanceRecord, LeaveStatus } from '../types';
-import { getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
+import { calculateLatePenaltyDays, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
 import { HOLIDAYS_2026 } from '../constants';
 import { formatThaiDate } from '../utils';
 
@@ -19,6 +19,7 @@ interface LedgerEntry {
 }
 
 const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
+  const latePolicy = getAttendanceLatePolicy();
   // ฟังก์ชันคำนวณวันทำการ (เหมือนใน LeaveForm)
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     const start = new Date(startStr);
@@ -61,7 +62,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
         date: a.date,
         type: 'PENALTY' as const,
         description: `หักจากการเข้างานสาย (${a.checkIn})`,
-        amount: 0.25,
+        amount: calculateLatePenaltyDays(a.checkIn),
         timestamp: `${a.date}T${a.checkIn}`
       }))
     ];
@@ -145,7 +146,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
           <div>
             <p className="text-xs font-black text-gray-900 uppercase tracking-widest mb-1">กฎระเบียบบริษัท</p>
             <ul className="text-[11px] text-gray-500 font-medium space-y-1">
-              <li>• การมาสายหลังเวลา 09:30 น. จะถูกหักโควต้าพักร้อน 0.25 วัน ต่อครั้งโดยอัตโนมัติ</li>
+              <li>• การมาสายหลังเวลา {latePolicy.lateAfter.slice(0, 5)} น. จะถูกหักโควต้าพักร้อนอัตโนมัติ (ไม่เกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltyNormal} วัน, เกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltySevere} วัน)</li>
               <li>• หากโควต้าพักร้อนหมด ระบบจะนำไปหักจากเบี้ยขยันหรือวันหยุดชดเชยตามลำดับ</li>
               <li>• พนักงานสามารถอุทธรณ์รายการหักอัตโนมัติได้ภายใน 3 วันทำการ หากเกิดจากเหตุสุดวิสัย</li>
             </ul>

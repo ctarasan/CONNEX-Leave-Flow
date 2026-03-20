@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, UserRole } from '../types';
-import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
+import { calculateLatePenaltyDays, getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
 import { isApiMode } from '../api';
 import DatePicker from './DatePicker';
 
@@ -191,7 +191,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                           มาสาย
                         </span>
                         <span className="text-[9px] text-rose-400 font-bold mt-1 tracking-tighter">
-                          หักพักร้อน 0.25 วัน
+                          หักพักร้อน {calculateLatePenaltyDays(rec.checkIn)} วัน
                         </span>
                       </div>
                     ) : (
