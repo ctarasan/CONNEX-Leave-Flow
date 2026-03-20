@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User, UserRole } from '../types';
 import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
 import { isApiMode } from '../api';
+import DatePicker from './DatePicker';
 
 interface TeamAttendanceProps {
   manager: User;
@@ -99,26 +100,22 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-full"
               />
             </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                จากวันที่
-              </label>
-              <input
-                type="date"
+            <div className="w-full sm:w-[220px]">
+              <DatePicker
+                label="จากวันที่"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500"
+                onChange={setStartDate}
+                maxDate={endDate || undefined}
+                placeholder="เลือกวันที่เริ่มต้น"
               />
             </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                ถึงวันที่
-              </label>
-              <input
-                type="date"
+            <div className="w-full sm:w-[220px]">
+              <DatePicker
+                label="ถึงวันที่"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500"
+                onChange={setEndDate}
+                minDate={startDate || undefined}
+                placeholder="เลือกวันที่สิ้นสุด"
               />
             </div>
           </div>
