@@ -75,7 +75,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
       tiers: latePolicy.tiers
         .map(t => ({
           after: (t.after || '').trim(),
-          penalty: Math.max(0, Number(t.penalty) || 0),
+          penalty: Math.min(12, Math.max(0, Number(t.penalty) || 0)),
         }))
         .filter(t => !!t.after),
     };
@@ -103,9 +103,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
   };
 
   const handleLateTierChange = (idx: number, patch: { after?: string; penalty?: number }) => {
+    const normalizePenalty = (v: number | undefined, fallback: number): number => {
+      if (typeof v !== 'number' || Number.isNaN(v) || v < 0) return fallback;
+      return Math.min(12, v);
+    };
     setLatePolicy(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => i === idx ? { ...t, ...patch } : t),
+      tiers: prev.tiers.map((t, i) => i === idx
+        ? {
+            ...t,
+            ...patch,
+            penalty: normalizePenalty(patch.penalty, t.penalty),
+          }
+        : t),
     }));
   };
 
@@ -475,6 +485,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
                     <input
                       type="number"
                       min={0}
+                      max={12}
                       step="0.25"
                       value={tier.penalty}
                       onChange={(e) => handleLateTierChange(idx, { penalty: Number(e.target.value) })}
@@ -494,7 +505,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
             </div>
             <div className="flex items-center justify-between mt-3 gap-2">
               <p className="text-[11px] text-indigo-700 font-medium">
-                รองรับหลายช่วงเวลา: ระบบจะใช้อัตราหักของช่วงที่ตรงกับเวลาเช็คอินล่าสุดโดยอัตโนมัติ
+                รองรับหลายช่วงเวลา: ระบบจะใช้อัตราหักของช่วงที่ตรงกับเวลาเช็คอินล่าสุดโดยอัตโนมัติ (จำกัดค่าสูงสุด 12 วันต่อช่วง)
               </p>
               <div className="flex items-center gap-2">
                 <button

@@ -75,7 +75,8 @@ function normalizeAttendanceLatePolicy(raw: unknown): AttendanceLatePolicy {
   };
   const normalizePenalty = (v: unknown, fallback: number): number => {
     const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.min(12, n);
   };
   const sortByAfter = (list: Array<{ after: string; penalty: number }>) =>
     [...list].sort((a, b) => a.after.localeCompare(b.after));
