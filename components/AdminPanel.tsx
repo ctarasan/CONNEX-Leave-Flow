@@ -72,14 +72,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
 
   const handleSaveLatePolicy = () => {
     const normalized: AttendanceLatePolicy = {
-      lateAfter: latePolicy.lateAfter || '09:30:00',
-      severeLateAfter: latePolicy.severeLateAfter || '10:00:00',
-      penaltyNormal: Math.max(0, Number(latePolicy.penaltyNormal) || 0),
-      penaltySevere: Math.max(0, Number(latePolicy.penaltySevere) || 0),
+      tiers: latePolicy.tiers
+        .map(t => ({
+          after: (t.after || '').trim(),
+          penalty: Math.max(0, Number(t.penalty) || 0),
+        }))
+        .filter(t => !!t.after),
     };
+    if (normalized.tiers.length === 0) {
+      showAlert('ต้องมีกติกาอย่างน้อย 1 ช่วงเวลา');
+      return;
+    }
     saveAttendanceLatePolicy(normalized);
     setLatePolicy(getAttendanceLatePolicy());
     showAlert('บันทึกกติกาหักลาพักร้อนกรณีมาสายเรียบร้อยแล้ว');
+  };
+
+  const handleAddLateTier = () => {
+    setLatePolicy(prev => ({
+      ...prev,
+      tiers: [...prev.tiers, { after: '10:30:00', penalty: 0.75 }],
+    }));
+  };
+
+  const handleRemoveLateTier = (idx: number) => {
+    setLatePolicy(prev => {
+      if (prev.tiers.length <= 1) return prev;
+      return { ...prev, tiers: prev.tiers.filter((_, i) => i !== idx) };
+    });
+  };
+
+  const handleLateTierChange = (idx: number, patch: { after?: string; penalty?: number }) => {
+    setLatePolicy(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === idx ? { ...t, ...patch } : t),
+    }));
   };
 
   const handleEdit = (user: User) => {
@@ -426,61 +453,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUserDeleted }) => {
           <p className="text-xs text-gray-500 mb-4">กำหนดชื่อประเภท ใช้กับเพศใด และโควต้าวันต่อปี — พนักงานชายจะไม่เห็นประเภทที่ตั้งเป็นหญิงเท่านั้น (เช่น ลาคลอด)</p>
           <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
             <h4 className="text-sm font-black text-indigo-900 mb-3">กติกาหักลาพักร้อนกรณีเข้างานสาย</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">เริ่มนับว่าสายหลังเวลา</label>
-                <input
-                  type="time"
-                  step={1}
-                  value={latePolicy.lateAfter}
-                  onChange={(e) => setLatePolicy(prev => ({ ...prev, lateAfter: e.target.value || '09:30:00' }))}
-                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">เริ่มใช้อัตราหักหนักหลังเวลา</label>
-                <input
-                  type="time"
-                  step={1}
-                  value={latePolicy.severeLateAfter}
-                  onChange={(e) => setLatePolicy(prev => ({ ...prev, severeLateAfter: e.target.value || '10:00:00' }))}
-                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">หักเมื่อสาย (วัน)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.25"
-                  value={latePolicy.penaltyNormal}
-                  onChange={(e) => setLatePolicy(prev => ({ ...prev, penaltyNormal: Number(e.target.value) }))}
-                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">หักเมื่อสายหนัก (วัน)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.25"
-                  value={latePolicy.penaltySevere}
-                  onChange={(e) => setLatePolicy(prev => ({ ...prev, penaltySevere: Number(e.target.value) }))}
-                  className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                />
-              </div>
+            <div className="space-y-2">
+              {latePolicy.tiers.map((tier, idx) => (
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
+                      ช่วงที่ {idx + 1}: เริ่มหักหลังเวลา
+                    </label>
+                    <input
+                      type="time"
+                      step={1}
+                      value={tier.after}
+                      onChange={(e) => handleLateTierChange(idx, { after: e.target.value || '09:30:00' })}
+                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
+                      จำนวนวันที่หัก
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={tier.penalty}
+                      onChange={(e) => handleLateTierChange(idx, { penalty: Number(e.target.value) })}
+                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveLateTier(idx)}
+                    disabled={latePolicy.tiers.length <= 1}
+                    className="h-[46px] px-3 bg-rose-100 text-rose-700 rounded-xl text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ลบช่วง
+                  </button>
+                </div>
+              ))}
             </div>
-            <div className="flex items-center justify-between mt-3">
+            <div className="flex items-center justify-between mt-3 gap-2">
               <p className="text-[11px] text-indigo-700 font-medium">
-                ตัวอย่างปัจจุบัน: สายหลัง {latePolicy.lateAfter.slice(0, 5)} หัก {latePolicy.penaltyNormal} วัน, ถ้าเกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltySevere} วัน
+                รองรับหลายช่วงเวลา: ระบบจะใช้อัตราหักของช่วงที่ตรงกับเวลาเช็คอินล่าสุดโดยอัตโนมัติ
               </p>
-              <button
-                type="button"
-                onClick={handleSaveLatePolicy}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition"
-              >
-                บันทึกกติกา
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddLateTier}
+                  className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black hover:bg-indigo-100 transition"
+                >
+                  เพิ่มช่วง
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLatePolicy}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition"
+                >
+                  บันทึกกติกา
+                </button>
+              </div>
             </div>
           </div>
           <div className="overflow-x-auto rounded-xl border border-gray-100">

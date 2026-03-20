@@ -20,6 +20,11 @@ interface LedgerEntry {
 
 const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
   const latePolicy = getAttendanceLatePolicy();
+  const latePolicyText = latePolicy.tiers
+    .slice()
+    .sort((a, b) => a.after.localeCompare(b.after))
+    .map((t, i) => `${i + 1}) หลัง ${t.after.slice(0, 5)} หัก ${t.penalty} วัน`)
+    .join(' / ');
   // ฟังก์ชันคำนวณวันทำการ (เหมือนใน LeaveForm)
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     const start = new Date(startStr);
@@ -146,7 +151,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
           <div>
             <p className="text-xs font-black text-gray-900 uppercase tracking-widest mb-1">กฎระเบียบบริษัท</p>
             <ul className="text-[11px] text-gray-500 font-medium space-y-1">
-              <li>• การมาสายหลังเวลา {latePolicy.lateAfter.slice(0, 5)} น. จะถูกหักโควต้าพักร้อนอัตโนมัติ (ไม่เกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltyNormal} วัน, เกิน {latePolicy.severeLateAfter.slice(0, 5)} หัก {latePolicy.penaltySevere} วัน)</li>
+              <li>• การมาสายจะถูกหักโควต้าพักร้อนอัตโนมัติตามช่วงเวลาที่ผู้ดูแลกำหนด ({latePolicyText})</li>
               <li>• หากโควต้าพักร้อนหมด ระบบจะนำไปหักจากเบี้ยขยันหรือวันหยุดชดเชยตามลำดับ</li>
               <li>• พนักงานสามารถอุทธรณ์รายการหักอัตโนมัติได้ภายใน 3 วันทำการ หากเกิดจากเหตุสุดวิสัย</li>
             </ul>

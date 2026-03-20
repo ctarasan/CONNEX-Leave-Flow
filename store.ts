@@ -44,17 +44,17 @@ const STORAGE_KEYS = {
 };
 
 export interface AttendanceLatePolicy {
-  lateAfter: string; // HH:mm:ss
-  severeLateAfter: string; // HH:mm:ss
-  penaltyNormal: number; // day
-  penaltySevere: number; // day
+  tiers: Array<{
+    after: string; // HH:mm:ss
+    penalty: number; // day
+  }>;
 }
 
 const DEFAULT_ATTENDANCE_LATE_POLICY: AttendanceLatePolicy = {
-  lateAfter: '09:30:00',
-  severeLateAfter: '10:00:00',
-  penaltyNormal: 0.25,
-  penaltySevere: 0.5,
+  tiers: [
+    { after: '09:30:00', penalty: 0.25 },
+    { after: '10:00:00', penalty: 0.5 },
+  ],
 };
 
 /** ถ้ามีค่า = ใช้ Backend API (Supabase) — อ่าน/เขียนจาก DB แทน localStorage (ใช้ getApiBase จาก api เพื่อให้ fallback โดเมน Backend ทำงาน) */
@@ -67,23 +67,48 @@ const _attendanceCache = new Map<string, AttendanceRecord[]>();
 const _notificationsCache = new Map<string, Notification[]>();
 
 function normalizeAttendanceLatePolicy(raw: unknown): AttendanceLatePolicy {
-  if (!raw || typeof raw !== 'object') return DEFAULT_ATTENDANCE_LATE_POLICY;
-  const o = raw as Record<string, unknown>;
   const normalizeTime = (v: unknown, fallback: string): string => {
     const s = String(v ?? '').trim();
     if (/^\d{2}:\d{2}$/.test(s)) return `${s}:00`;
     if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s;
     return fallback;
   };
-  const lateAfter = normalizeTime(o.lateAfter, DEFAULT_ATTENDANCE_LATE_POLICY.lateAfter);
-  const severeLateAfter = normalizeTime(o.severeLateAfter, DEFAULT_ATTENDANCE_LATE_POLICY.severeLateAfter);
-  const penaltyNormal = Number(o.penaltyNormal ?? DEFAULT_ATTENDANCE_LATE_POLICY.penaltyNormal);
-  const penaltySevere = Number(o.penaltySevere ?? DEFAULT_ATTENDANCE_LATE_POLICY.penaltySevere);
+  const normalizePenalty = (v: unknown, fallback: number): number => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  const sortByAfter = (list: Array<{ after: string; penalty: number }>) =>
+    [...list].sort((a, b) => a.after.localeCompare(b.after));
+
+  if (!raw || typeof raw !== 'object') return DEFAULT_ATTENDANCE_LATE_POLICY;
+  const o = raw as Record<string, unknown>;
+
+  const tiersRaw = Array.isArray(o.tiers) ? o.tiers : [];
+  const normalizedTiers = tiersRaw
+    .filter((x) => x && typeof x === 'object')
+    .map((x) => {
+      const t = x as Record<string, unknown>;
+      return {
+        after: normalizeTime(t.after, '09:30:00'),
+        penalty: normalizePenalty(t.penalty, 0.25),
+      };
+    })
+    .filter((t) => !!t.after);
+
+  if (normalizedTiers.length > 0) {
+    return { tiers: sortByAfter(normalizedTiers) };
+  }
+
+  // backward compatibility with old shape
+  const lateAfter = normalizeTime(o.lateAfter, '09:30:00');
+  const severeLateAfter = normalizeTime(o.severeLateAfter, '10:00:00');
+  const penaltyNormal = normalizePenalty(o.penaltyNormal, 0.25);
+  const penaltySevere = normalizePenalty(o.penaltySevere, 0.5);
   return {
-    lateAfter,
-    severeLateAfter,
-    penaltyNormal: Number.isFinite(penaltyNormal) && penaltyNormal >= 0 ? penaltyNormal : DEFAULT_ATTENDANCE_LATE_POLICY.penaltyNormal,
-    penaltySevere: Number.isFinite(penaltySevere) && penaltySevere >= 0 ? penaltySevere : DEFAULT_ATTENDANCE_LATE_POLICY.penaltySevere,
+    tiers: sortByAfter([
+      { after: lateAfter, penalty: penaltyNormal },
+      { after: severeLateAfter, penalty: penaltySevere },
+    ]),
   };
 }
 
@@ -100,8 +125,17 @@ export function saveAttendanceLatePolicy(policy: AttendanceLatePolicy): void {
 
 export function calculateLatePenaltyDays(checkIn?: string): number {
   const policy = getAttendanceLatePolicy();
-  if (!checkIn || checkIn <= policy.lateAfter) return 0;
-  return checkIn > policy.severeLateAfter ? policy.penaltySevere : policy.penaltyNormal;
+  if (!checkIn) return 0;
+  let penalty = 0;
+  for (const tier of policy.tiers) {
+    if (checkIn > tier.after) penalty = tier.penalty;
+  }
+  return penalty;
+}
+
+export function getLateThresholdTime(): string {
+  const policy = getAttendanceLatePolicy();
+  return policy.tiers[0]?.after || DEFAULT_ATTENDANCE_LATE_POLICY.tiers[0].after;
 }
 
 /** แปลง quota keys จาก lowercase (จาก backend) เป็น UPPERCASE (ตาม LeaveTypeId ที่ frontend ใช้)
@@ -218,10 +252,10 @@ function normalizeNotification(n: Record<string, unknown>): Notification {
 function normalizeAttendance(r: Record<string, unknown>): AttendanceRecord {
   const checkIn = r.checkIn != null ? String(r.checkIn).slice(0, 8) : (r.check_in != null ? String(r.check_in).slice(0, 8) : undefined);
   const checkOut = r.checkOut != null ? String(r.checkOut).slice(0, 8) : (r.check_out != null ? String(r.check_out).slice(0, 8) : undefined);
-  const latePolicy = getAttendanceLatePolicy();
+  const lateThreshold = getLateThresholdTime();
   // ยึด policy ปัจจุบันเมื่อมี checkIn; ถ้าไม่มี checkIn ค่อย fallback ค่า isLate จาก backend
   const isLate = typeof checkIn === 'string'
-    ? checkIn > latePolicy.lateAfter
+    ? checkIn > lateThreshold
     : (r.isLate === true || r.is_late === true);
   return {
     id: String(r.id),
@@ -648,10 +682,10 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
   let record = records.find(r => r.userId === userId && r.date === dateStr);
   getAllUsers();
   const user = _usersByIdCache?.get(userId);
-  const latePolicy = getAttendanceLatePolicy();
+  const lateThreshold = getLateThresholdTime();
 
   if (!record) {
-    const isLate = type === 'IN' && timeStr > latePolicy.lateAfter;
+    const isLate = type === 'IN' && timeStr > lateThreshold;
     record = {
       id: Math.random().toString(36).substring(2, 11),
       userId,
@@ -672,7 +706,7 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
       createNotification({
         userId,
         title: 'แจ้งเตือนการเข้างานสาย',
-        message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${latePolicy.lateAfter.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
+        message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
       });
 
       // Notify Manager
@@ -689,7 +723,7 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
   } else {
     if (type === 'IN' && !record.checkIn) {
       record.checkIn = timeStr;
-      record.isLate = timeStr > latePolicy.lateAfter;
+      record.isLate = timeStr > lateThreshold;
       if (record.isLate && !record.penaltyApplied && user) {
          const penaltyDays = calculateLatePenaltyDays(timeStr);
          const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
@@ -699,7 +733,7 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
          createNotification({
             userId,
             title: 'แจ้งเตือนการเข้างานสาย',
-            message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${latePolicy.lateAfter.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
+            message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
           });
           
           if (user.managerId) {
