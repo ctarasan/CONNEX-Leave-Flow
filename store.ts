@@ -674,10 +674,17 @@ export const getAttendanceRecords = (userId?: string): AttendanceRecord[] => {
   return userId ? records.filter(r => r.userId === userId) : records;
 };
 
+function getLocalDateString(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRecord => {
   const records = getAttendanceRecords();
   const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
+  const dateStr = getLocalDateString(now);
   const timeStr = now.toLocaleTimeString('th-TH', { hour12: false });
   
   let record = records.find(r => r.userId === userId && r.date === dateStr);
@@ -751,7 +758,7 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
   }
 
   if (isApiMode()) {
-    const dateStrForApi = now.toISOString().split('T')[0];
+    const dateStrForApi = getLocalDateString(now);
     return api.postAttendance(userId, type)
       .then((data) => {
         loadAttendanceForUser(userId);

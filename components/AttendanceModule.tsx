@@ -23,8 +23,15 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
     return () => clearInterval(timer);
   }, [user.id]);
 
+  const getLocalDateString = (date = new Date()) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   const todayRecord = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString(new Date());
     return records.find(r => r.date === todayStr);
   }, [records]);
 
