@@ -159,7 +159,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
             </button>
             <button 
               onClick={() => handleAction('OUT')}
-              disabled={!todayRecord?.checkIn || !!todayRecord?.checkOut || isSubmitting}
+              disabled={!todayRecord?.checkIn || isSubmitting}
               className="w-full h-24 bg-blue-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คเอาท์ (OUT)
