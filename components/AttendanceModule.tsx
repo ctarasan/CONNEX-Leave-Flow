@@ -83,7 +83,15 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
       const record = typeof (result as Promise<unknown>)?.then === 'function'
         ? await (result as Promise<AttendanceRecord>)
         : result as AttendanceRecord;
-      setRecords(getAttendanceRecords(user.id));
+      setRecords((prev) => {
+        const idx = prev.findIndex((r) => r.date === record.date);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...record };
+          return next;
+        }
+        return [record, ...prev];
+      });
       onUpdate();
       showAlert(type === 'IN' ? 'บันทึกเวลาเช็คอินสำเร็จ' : 'บันทึกเวลาเช็คเอาท์สำเร็จ');
     } catch (err) {

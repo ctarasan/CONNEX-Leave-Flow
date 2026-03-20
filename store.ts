@@ -760,13 +760,19 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
   }
 
   if (isApiMode()) {
-    const dateStrForApi = getLocalDateString(now);
     return api.postAttendance(userId, type)
       .then((data) => {
-        loadAttendanceForUser(userId);
-        const list = getAttendanceRecords(userId);
-        const updated = list.find(r => r.date === dateStrForApi);
-        return updated ?? record;
+        const updated = normalizeAttendance(data as Record<string, unknown>);
+        const current = _attendanceCache.get(userId) ?? [];
+        const idx = current.findIndex((r) => r.date === updated.date);
+        if (idx >= 0) {
+          const next = [...current];
+          next[idx] = { ...next[idx], ...updated };
+          _attendanceCache.set(userId, next);
+        } else {
+          _attendanceCache.set(userId, [updated, ...current]);
+        }
+        return updated;
       }) as Promise<AttendanceRecord>;
   }
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
