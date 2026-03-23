@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { TimesheetEntry, TimesheetProject, TIMESHEET_TASK_TYPES, User, UserRole } from '../types';
+import { TimesheetEntry, TIMESHEET_TASK_TYPES, User, UserRole } from '../types';
 import {
   getAllUsers,
   getSubordinateIdsRecursive,
@@ -9,7 +9,6 @@ import {
   getTimesheetProjects,
   getTimesheetProjectsForUser,
   saveTimesheetEntry,
-  upsertTimesheetProject,
 } from '../store';
 
 interface TimesheetModuleProps {
@@ -41,14 +40,6 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const [taskType, setTaskType] = useState<string>(TIMESHEET_TASK_TYPES[0]);
   const [hours, setHours] = useState(8);
   const [minutes, setMinutes] = useState(0);
-  const [editProject, setEditProject] = useState<TimesheetProject | null>(null);
-  const [projCode, setProjCode] = useState('');
-  const [projName, setProjName] = useState('');
-  const [projManagerId, setProjManagerId] = useState('');
-  const [assignedIds, setAssignedIds] = useState<string[]>([]);
-  const [taskTargets, setTaskTargets] = useState<Record<string, number>>(
-    Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0]))
-  );
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
 
@@ -190,40 +181,6 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     onUpdate();
   };
 
-  const beginEditProject = (p: TimesheetProject) => {
-    setEditProject(p);
-    setProjCode(p.code);
-    setProjName(p.name);
-    setProjManagerId(p.projectManagerId);
-    setAssignedIds([...p.assignedUserIds]);
-    setTaskTargets({ ...Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0])), ...p.taskTargetDays });
-  };
-
-  const resetProjectForm = () => {
-    setEditProject(null);
-    setProjCode('');
-    setProjName('');
-    setProjManagerId('');
-    setAssignedIds([]);
-    setTaskTargets(Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0])));
-  };
-
-  const saveProject = () => {
-    if (!projCode.trim() || !projName.trim() || !projManagerId) return;
-    const id = editProject?.id ?? `P-${Date.now()}`;
-    upsertTimesheetProject({
-      id,
-      code: projCode.trim().toUpperCase(),
-      name: projName.trim(),
-      taskTargetDays: taskTargets,
-      assignedUserIds: assignedIds,
-      projectManagerId: projManagerId,
-      isActive: true,
-    });
-    resetProjectForm();
-    onUpdate();
-  };
-
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
@@ -320,71 +277,6 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
           </table>
         </div>
       </div>
-
-      {isManagerOrAdmin && (
-        <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-black">จัดการโครงการ (Manager/Admin)</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input value={projCode} onChange={(e) => setProjCode(e.target.value)} placeholder="รหัสโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold" />
-            <input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="ชื่อโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-2" />
-            <select value={projManagerId} onChange={(e) => setProjManagerId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-3">
-              <option value="">เลือก Project Manager</option>
-              {allUsers.filter((u) => u.role !== UserRole.EMPLOYEE).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <p className="text-xs font-black text-gray-500 mb-2">กำหนดพนักงานในโครงการ</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 max-h-40 overflow-auto border rounded-xl p-3">
-              {allUsers.map((u) => (
-                <label key={u.id} className="text-xs font-bold flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={assignedIds.includes(u.id)}
-                    onChange={(e) => {
-                      setAssignedIds((prev) => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter((id) => id !== u.id));
-                    }}
-                  />
-                  {u.name}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            {TIMESHEET_TASK_TYPES.map((t) => (
-              <label key={t} className="text-xs font-bold">
-                {t}
-                <input
-                  type="number"
-                  min={0}
-                  step="0.25"
-                  value={taskTargets[t] ?? 0}
-                  onChange={(e) => setTaskTargets((prev) => ({ ...prev, [t]: Number(e.target.value) || 0 }))}
-                  className="mt-1 w-full px-2 py-2 border rounded-xl text-sm font-bold"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={saveProject} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black">{editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}</button>
-            {editProject && <button onClick={resetProjectForm} className="px-4 py-2 bg-gray-200 rounded-xl text-sm font-black">ยกเลิกแก้ไข</button>}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead><tr className="text-xs text-gray-400"><th className="py-2">รหัส</th><th className="py-2">ชื่อโครงการ</th><th className="py-2">PM</th><th className="py-2 text-right">จัดการ</th></tr></thead>
-              <tbody>
-                {allProjects.filter((p) => p.isActive).map((p) => (
-                  <tr key={p.id} className="border-t">
-                    <td className="py-2 font-black text-sm">{p.code}</td>
-                    <td className="py-2 text-sm">{p.name}</td>
-                    <td className="py-2 text-sm">{allUsers.find((u) => u.id === p.projectManagerId)?.name || '-'}</td>
-                    <td className="py-2 text-right"><button onClick={() => beginEditProject(p)} className="text-blue-600 text-xs font-black">แก้ไข</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {isManagerOrAdmin && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">

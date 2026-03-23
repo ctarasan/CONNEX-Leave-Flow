@@ -448,7 +448,7 @@ const App: React.FC = () => {
                 รายงานสรุป
               </button>
             )}
-            {currentUser.role === UserRole.ADMIN && (
+            {isManagerOrAdmin && (
               <button 
                 onClick={() => setActiveTab('admin')}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'admin' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
@@ -736,7 +736,7 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'report' && <ReportSummary requests={reportRequests} currentUser={currentUser} />}
-        {activeTab === 'admin' && <AdminPanel onUserDeleted={(id) => { if (currentUser?.id === id) handleLogout(); }} />}
+        {activeTab === 'admin' && <AdminPanel currentUser={currentUser} onUserDeleted={(id) => { if (currentUser?.id === id) handleLogout(); }} />}
       </main>
       </div>
       <footer className="py-3 px-4 bg-white border-t border-gray-100 text-center text-[10px] text-gray-500 font-medium">
