@@ -39,10 +39,10 @@ const startOfWeek = (d: Date): Date => {
 const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate }) => {
   const { showAlert } = useAlert();
   const [selectedDate, setSelectedDate] = useState<string>(toIso(new Date()));
-  const [projectId, setProjectId] = useState('');
-  const [taskType, setTaskType] = useState<string>('');
-  const [hours, setHours] = useState(8);
-  const [minutes, setMinutes] = useState(0);
+  const [draftProjectId, setDraftProjectId] = useState('');
+  const [draftTaskType, setDraftTaskType] = useState<string>('');
+  const [draftHours, setDraftHours] = useState(8);
+  const [draftMinutes, setDraftMinutes] = useState(0);
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
@@ -53,7 +53,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const taskTypes = useMemo(() => getTimesheetTaskTypes().filter((t) => t.isActive), [refreshTick]);
   const taskLabelMap = useMemo(() => new Map(taskTypes.map((t) => [t.id, t.label])), [taskTypes]);
   const userProjects = useMemo(() => getTimesheetProjectsForUser(currentUser.id), [currentUser.id, refreshTick]);
-  const normalizedTaskType = taskType || taskTypes[0]?.id || '';
+  const normalizedTaskType = draftTaskType || taskTypes[0]?.id || '';
   const selectedDateEntries = useMemo(() => getTimesheetEntriesByDate(currentUser.id, selectedDate), [currentUser.id, selectedDate, refreshTick]);
   const selectedMonth = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
@@ -177,7 +177,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   }, [teamEntries]);
 
   const saveEntry = () => {
-    if (!projectId) {
+    if (!draftProjectId) {
       showAlert('กรุณาเลือกโครงการก่อนบันทึก Timesheet');
       return;
     }
@@ -188,9 +188,9 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     saveTimesheetEntry({
       userId: currentUser.id,
       date: selectedDate,
-      projectId,
+      projectId: draftProjectId,
       taskType: normalizedTaskType,
-      minutes: Math.max(0, hours * 60 + minutes),
+      minutes: Math.max(0, draftHours * 60 + draftMinutes),
     });
     setRefreshTick((v) => v + 1);
     onUpdate();
@@ -201,26 +201,11 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     <div className="space-y-6">
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
         <h3 className="text-lg font-black text-gray-900">Timesheet Calendar</h3>
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold" />
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold min-w-60">
-            <option value="">เลือกโครงการที่ได้รับมอบหมาย</option>
-            {userProjects.map((p) => (
-              <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
-            ))}
-          </select>
-          <select value={normalizedTaskType} onChange={(e) => setTaskType(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold">
-            {taskTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-          </select>
-          <div className="flex items-center gap-1">
-            <input type="number" min={0} max={24} value={hours} onChange={(e) => setHours(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
-            <span className="text-xs font-black text-gray-500">ชั่วโมง</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <input type="number" min={0} max={59} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
-            <span className="text-xs font-black text-gray-500">นาที</span>
-          </div>
-          <button onClick={saveEntry} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-black">บันทึก Timesheet</button>
+          <p className="text-sm font-bold text-gray-600">
+            วันที่เลือก: {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })}
+          </p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
@@ -256,7 +241,30 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-200 p-6">
-        <h4 className="font-black mb-3">รายการของวันที่เลือก</h4>
+        <h4 className="font-black mb-3">จัดการรายการของวันที่เลือก</h4>
+        <div className="border rounded-xl p-3 mb-3 space-y-3 bg-gray-50">
+          <p className="text-xs font-black text-gray-600">เพิ่มรายการใหม่ของวันที่เลือก</p>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={draftProjectId} onChange={(e) => setDraftProjectId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold min-w-60 bg-white">
+              <option value="">เลือกโครงการที่ได้รับมอบหมาย</option>
+              {userProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+              ))}
+            </select>
+            <select value={normalizedTaskType} onChange={(e) => setDraftTaskType(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold bg-white">
+              {taskTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+            <div className="flex items-center gap-1 bg-white rounded-xl border px-2 py-1">
+              <input type="number" min={0} max={24} value={draftHours} onChange={(e) => setDraftHours(Number(e.target.value) || 0)} className="w-16 px-2 py-1 text-sm font-bold outline-none" />
+              <span className="text-xs font-black text-gray-500">ชั่วโมง</span>
+            </div>
+            <div className="flex items-center gap-1 bg-white rounded-xl border px-2 py-1">
+              <input type="number" min={0} max={59} value={draftMinutes} onChange={(e) => setDraftMinutes(Number(e.target.value) || 0)} className="w-16 px-2 py-1 text-sm font-bold outline-none" />
+              <span className="text-xs font-black text-gray-500">นาที</span>
+            </div>
+            <button onClick={saveEntry} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-black">เพิ่มรายการ</button>
+          </div>
+        </div>
         <div className="space-y-2">
           {selectedDateEntries.map((e) => {
             const p = allProjects.find((x) => x.id === e.projectId);
@@ -264,19 +272,40 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
               <div key={e.id} className="flex flex-wrap items-center gap-3 border rounded-xl p-3">
                 <span className="text-sm font-bold min-w-60">{p ? `${p.code} - ${p.name}` : e.projectId}</span>
                 <span className="text-xs font-bold text-gray-500">{taskLabelMap.get(e.taskType) || e.taskType}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={24 * 60}
-                  value={e.minutes}
-                  onChange={(ev) => {
-                    saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: Number(ev.target.value) || 0 });
-                    setRefreshTick((v) => v + 1);
-                    onUpdate();
-                  }}
-                  className="w-28 px-2 py-1 border rounded-lg text-sm font-bold"
-                />
-                <span className="text-xs text-gray-500">นาที</span>
+                <div className="flex items-center gap-1 border rounded-lg px-2 py-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={24}
+                    value={Math.floor(e.minutes / 60)}
+                    onChange={(ev) => {
+                      const h = Math.max(0, Number(ev.target.value) || 0);
+                      const m = e.minutes % 60;
+                      saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m });
+                      setRefreshTick((v) => v + 1);
+                      onUpdate();
+                    }}
+                    className="w-16 px-1 py-1 text-sm font-bold outline-none"
+                  />
+                  <span className="text-xs text-gray-500">ชั่วโมง</span>
+                </div>
+                <div className="flex items-center gap-1 border rounded-lg px-2 py-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={e.minutes % 60}
+                    onChange={(ev) => {
+                      const h = Math.floor(e.minutes / 60);
+                      const m = Math.min(59, Math.max(0, Number(ev.target.value) || 0));
+                      saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m });
+                      setRefreshTick((v) => v + 1);
+                      onUpdate();
+                    }}
+                    className="w-16 px-1 py-1 text-sm font-bold outline-none"
+                  />
+                  <span className="text-xs text-gray-500">นาที</span>
+                </div>
               </div>
             );
           })}
