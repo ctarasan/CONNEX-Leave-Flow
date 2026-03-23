@@ -11,6 +11,7 @@ import {
   getTimesheetTaskTypes,
   saveTimesheetEntry,
 } from '../store';
+import { useAlert } from '../AlertContext';
 
 interface TimesheetModuleProps {
   currentUser: User;
@@ -36,6 +37,7 @@ const startOfWeek = (d: Date): Date => {
 };
 
 const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate }) => {
+  const { showAlert } = useAlert();
   const [selectedDate, setSelectedDate] = useState<string>(toIso(new Date()));
   const [projectId, setProjectId] = useState('');
   const [taskType, setTaskType] = useState<string>('');
@@ -43,19 +45,20 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const [minutes, setMinutes] = useState(0);
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
+  const [refreshTick, setRefreshTick] = useState(0);
 
-  const allUsers = useMemo(() => getAllUsers(), [onUpdate]);
-  const allEntries = useMemo(() => getTimesheetEntries(), [onUpdate]);
-  const allProjects = useMemo(() => getTimesheetProjects(), [onUpdate]);
-  const taskTypes = useMemo(() => getTimesheetTaskTypes().filter((t) => t.isActive), [onUpdate]);
+  const allUsers = useMemo(() => getAllUsers(), [refreshTick]);
+  const allEntries = useMemo(() => getTimesheetEntries(), [refreshTick]);
+  const allProjects = useMemo(() => getTimesheetProjects(), [refreshTick]);
+  const taskTypes = useMemo(() => getTimesheetTaskTypes().filter((t) => t.isActive), [refreshTick]);
   const taskLabelMap = useMemo(() => new Map(taskTypes.map((t) => [t.id, t.label])), [taskTypes]);
-  const userProjects = useMemo(() => getTimesheetProjectsForUser(currentUser.id), [currentUser.id, onUpdate]);
+  const userProjects = useMemo(() => getTimesheetProjectsForUser(currentUser.id), [currentUser.id, refreshTick]);
   const normalizedTaskType = taskType || taskTypes[0]?.id || '';
-  const selectedDateEntries = useMemo(() => getTimesheetEntriesByDate(currentUser.id, selectedDate), [currentUser.id, selectedDate, onUpdate]);
+  const selectedDateEntries = useMemo(() => getTimesheetEntriesByDate(currentUser.id, selectedDate), [currentUser.id, selectedDate, refreshTick]);
   const selectedMonth = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
 
-  const myEntries = useMemo(() => getTimesheetEntries(currentUser.id), [currentUser.id, onUpdate]);
+  const myEntries = useMemo(() => getTimesheetEntries(currentUser.id), [currentUser.id, refreshTick]);
 
   const dailyMinutes = useMemo(
     () => myEntries.filter((e) => e.date === selectedDate).reduce((s, e) => s + e.minutes, 0),
@@ -166,7 +169,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   }, [allUsers, currentUser.id, currentUser.role]);
 
   const activeTeamUserId = teamUserId || teamCandidates[0]?.id || '';
-  const teamEntries = useMemo(() => (activeTeamUserId ? getTimesheetEntries(activeTeamUserId) : []), [activeTeamUserId, onUpdate]);
+  const teamEntries = useMemo(() => (activeTeamUserId ? getTimesheetEntries(activeTeamUserId) : []), [activeTeamUserId, refreshTick]);
   const teamDayMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of teamEntries) map.set(e.date, (map.get(e.date) ?? 0) + e.minutes);
@@ -174,7 +177,14 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   }, [teamEntries]);
 
   const saveEntry = () => {
-    if (!projectId) return;
+    if (!projectId) {
+      showAlert('กรุณาเลือกโครงการก่อนบันทึก Timesheet');
+      return;
+    }
+    if (!normalizedTaskType) {
+      showAlert('ยังไม่มีประเภท Task ให้เลือก กรุณาให้ Admin ตั้งค่า Task ก่อน');
+      return;
+    }
     saveTimesheetEntry({
       userId: currentUser.id,
       date: selectedDate,
@@ -182,7 +192,9 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       taskType: normalizedTaskType,
       minutes: Math.max(0, hours * 60 + minutes),
     });
+    setRefreshTick((v) => v + 1);
     onUpdate();
+    showAlert('บันทึก Timesheet เรียบร้อยแล้ว');
   };
 
   return (
@@ -200,8 +212,14 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
           <select value={normalizedTaskType} onChange={(e) => setTaskType(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold">
             {taskTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
-          <input type="number" min={0} max={24} value={hours} onChange={(e) => setHours(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
-          <input type="number" min={0} max={59} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
+          <div className="flex items-center gap-1">
+            <input type="number" min={0} max={24} value={hours} onChange={(e) => setHours(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
+            <span className="text-xs font-black text-gray-500">ชั่วโมง</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <input type="number" min={0} max={59} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
+            <span className="text-xs font-black text-gray-500">นาที</span>
+          </div>
           <button onClick={saveEntry} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-black">บันทึก Timesheet</button>
         </div>
 
@@ -253,6 +271,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
                   value={e.minutes}
                   onChange={(ev) => {
                     saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: Number(ev.target.value) || 0 });
+                    setRefreshTick((v) => v + 1);
                     onUpdate();
                   }}
                   className="w-28 px-2 py-1 border rounded-lg text-sm font-bold"
