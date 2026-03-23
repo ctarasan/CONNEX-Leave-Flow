@@ -449,9 +449,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <input
                   type="number"
                   min={0}
+                  max={999}
                   step="0.25"
                   value={taskTargets[t.id] ?? 0}
-                  onChange={(e) => setTaskTargets((prev) => ({ ...prev, [t.id]: Number(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setTaskTargets((prev) => ({
+                      ...prev,
+                      [t.id]: Math.min(999, Math.max(0, Number(e.target.value) || 0)),
+                    }))
+                  }
                   className="mt-1 w-full px-2 py-2 border rounded-xl text-sm font-bold"
                 />
               </label>

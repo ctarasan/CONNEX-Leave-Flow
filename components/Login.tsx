@@ -63,12 +63,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const users = getAllUsers();
 
   const handleLoginSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (Date.now() < lockedUntil) return;
+    if (Date.now() < lockedUntil || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     if (isApiMode()) {
       setConnectionError(false);
@@ -92,6 +95,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setIsError(true);
         setTimeout(() => setIsError(false), 3000);
         if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
+      }).finally(() => {
+        setIsSubmitting(false);
       });
       return;
     }
@@ -101,6 +106,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setAttempts(0);
       saveCurrentUser(foundUser);
       onLogin(foundUser);
+      setIsSubmitting(false);
     } else {
       const next = attempts + 1;
       setAttempts(next);
@@ -110,8 +116,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setLockedUntil(Date.now() + LOCKOUT_MS);
         setTimeout(() => setAttempts(0), LOCKOUT_MS);
       }
+      setIsSubmitting(false);
     }
-  }, [email, password, attempts, lockedUntil, users, onLogin]);
+  }, [email, password, attempts, lockedUntil, users, onLogin, isSubmitting]);
 
   const handleDemoClick = (user: User) => {
     setEmail(user.email);
@@ -179,10 +186,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <button 
               type="submit"
-              disabled={isLocked}
+              disabled={isLocked || isSubmitting}
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:pointer-events-none"
             >
-              {isLocked ? 'กรุณารอสักครู่...' : 'เข้าสู่ระบบ'}
+              {isLocked ? 'กรุณารอสักครู่...' : isSubmitting ? 'กำลังตรวจสอบ Authentication...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
 
