@@ -89,3 +89,33 @@ export interface MonthlyReport {
   rejected: number;
   byType: Record<string, number>;
 }
+
+export const TIMESHEET_TASK_TYPES = [
+  'Research',
+  'Coding',
+  'Testing',
+  'Bug Fixing',
+  'Planning',
+] as const;
+
+export type TimesheetTaskType = (typeof TIMESHEET_TASK_TYPES)[number];
+
+export interface TimesheetProject {
+  id: string;
+  code: string;
+  name: string;
+  taskTargetDays: Record<string, number>;
+  assignedUserIds: string[];
+  projectManagerId: string;
+  isActive: boolean;
+}
+
+export interface TimesheetEntry {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  projectId: string;
+  taskType: string;
+  minutes: number;
+  updatedAt: string;
+}

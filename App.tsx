@@ -11,6 +11,7 @@ import AdminPanel from './components/AdminPanel';
 import AttendanceModule from './components/AttendanceModule';
 import TeamAttendance from './components/TeamAttendance';
 import VacationLedger from './components/VacationLedger';
+import TimesheetModule from './components/TimesheetModule';
 import Login from './components/Login';
 import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from './constants';
 import { formatThaiDate } from './utils';
@@ -26,7 +27,7 @@ const App: React.FC = () => {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'report' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'timesheet' | 'history' | 'report' | 'admin'>('dashboard');
   const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation' | 'team'>('leave');
   /** แดชบอร์ด: แสดงเฉพาะ ลาป่วย ลาพักร้อน ลากิจ โดย default; ใช้ลิงก์ "ดูทุกประเภทวันลา" เพื่อแสดงที่เหลือ */
   const [showAllDashboardLeaveTypes, setShowAllDashboardLeaveTypes] = useState(false);
@@ -431,6 +432,13 @@ const App: React.FC = () => {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               ประวัติรายการ
             </button>
+            <button
+              onClick={() => setActiveTab('timesheet')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'timesheet' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z" /></svg>
+              Timesheet
+            </button>
             {isManagerOrAdmin && (
               <button 
                 onClick={() => setActiveTab('report')}
@@ -495,6 +503,7 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-black text-gray-900">
               {activeTab === 'dashboard' && 'แดชบอร์ด'}
               {activeTab === 'attendance' && 'ลงเวลาทำงาน'}
+              {activeTab === 'timesheet' && 'ลงเวลาแบบ Timesheet'}
               {activeTab === 'history' && 'ประวัติรายการ'}
               {activeTab === 'report' && 'รายงานการลา'}
               {activeTab === 'admin' && 'จัดการระบบ'}
@@ -593,6 +602,7 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'attendance' && <AttendanceModule user={currentUser} onUpdate={fetchData} />}
+        {activeTab === 'timesheet' && <TimesheetModule currentUser={currentUser} onUpdate={fetchData} />}
 
         {activeTab === 'history' && (
           <div className="space-y-6">

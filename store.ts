@@ -1,4 +1,4 @@
-import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord } from './types';
+import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord, TimesheetEntry, TimesheetProject, TIMESHEET_TASK_TYPES } from './types';
 import { HOLIDAYS_2026 } from './constants';
 import { parseConnexCSV, thaiDateToISODate } from './connexSeed';
 import * as api from './api';
@@ -39,6 +39,8 @@ const STORAGE_KEYS = {
   USERS: 'hr_users_list',
   HOLIDAYS: 'hr_company_holidays',
   ATTENDANCE: 'hr_attendance_records',
+  TIMESHEET_PROJECTS: 'hr_timesheet_projects',
+  TIMESHEET_ENTRIES: 'hr_timesheet_entries',
   LEAVE_TYPES: 'hr_leave_types',
   ATTENDANCE_LATE_POLICY: 'hr_attendance_late_policy',
 };
@@ -680,6 +682,151 @@ function getLocalDateString(date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+function sanitizeMinutes(v: number): number {
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.min(24 * 60, Math.round(v));
+}
+
+function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const code = String(o.code ?? '').trim();
+  const name = String(o.name ?? '').trim();
+  const managerId = normalizeUserId(o.projectManagerId ?? '');
+  if (!id || !code || !name || !managerId) return null;
+  const assignedRaw = Array.isArray(o.assignedUserIds) ? o.assignedUserIds : [];
+  const assignedUserIds = assignedRaw.map((x) => normalizeUserId(x)).filter(Boolean);
+  const targetRaw = (o.taskTargetDays && typeof o.taskTargetDays === 'object') ? (o.taskTargetDays as Record<string, unknown>) : {};
+  const taskTargetDays: Record<string, number> = {};
+  for (const task of TIMESHEET_TASK_TYPES) {
+    const n = Number(targetRaw[task]);
+    taskTargetDays[task] = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  return {
+    id,
+    code,
+    name,
+    taskTargetDays,
+    assignedUserIds: Array.from(new Set(assignedUserIds)),
+    projectManagerId: managerId,
+    isActive: o.isActive !== false,
+  };
+}
+
+function normalizeTimesheetEntry(raw: unknown): TimesheetEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const userId = normalizeUserId(o.userId ?? '');
+  const date = String(o.date ?? '').trim();
+  const projectId = String(o.projectId ?? '').trim();
+  const taskType = String(o.taskType ?? '').trim();
+  if (!id || !userId || !date || !projectId || !taskType) return null;
+  return {
+    id,
+    userId,
+    date,
+    projectId,
+    taskType,
+    minutes: sanitizeMinutes(Number(o.minutes ?? 0)),
+    updatedAt: String(o.updatedAt ?? new Date().toISOString()),
+  };
+}
+
+export const getTimesheetProjects = (): TimesheetProject[] => {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_PROJECTS);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetProject)
+    .filter((x): x is TimesheetProject => x !== null);
+};
+
+export const saveTimesheetProjects = (projects: TimesheetProject[]): void => {
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_PROJECTS, JSON.stringify(projects));
+};
+
+export const upsertTimesheetProject = (project: TimesheetProject): TimesheetProject => {
+  const normalized = normalizeTimesheetProject(project);
+  if (!normalized) {
+    throw new Error('ข้อมูลโครงการไม่ถูกต้อง');
+  }
+  const projects = getTimesheetProjects();
+  const idx = projects.findIndex((p) => p.id === normalized.id);
+  if (idx >= 0) {
+    projects[idx] = normalized;
+  } else {
+    projects.push(normalized);
+  }
+  saveTimesheetProjects(projects);
+  return normalized;
+};
+
+export const getTimesheetEntries = (userId?: string): TimesheetEntry[] => {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_ENTRIES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetEntry)
+    .filter((x): x is TimesheetEntry => x !== null)
+    .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+  if (!userId) return normalized;
+  const uid = normalizeUserId(userId);
+  return normalized.filter((e) => normalizeUserId(e.userId) === uid);
+};
+
+export const getTimesheetProjectsForUser = (userId: string): TimesheetProject[] => {
+  const uid = normalizeUserId(userId);
+  return getTimesheetProjects().filter((p) => p.isActive && p.assignedUserIds.includes(uid));
+};
+
+export const saveTimesheetEntry = (payload: {
+  userId: string;
+  date: string;
+  projectId: string;
+  taskType: string;
+  minutes: number;
+}): TimesheetEntry => {
+  const userId = normalizeUserId(payload.userId);
+  const date = String(payload.date || '').trim();
+  const projectId = String(payload.projectId || '').trim();
+  const taskType = String(payload.taskType || '').trim();
+  if (!userId || !isValidDateString(date) || !projectId || !taskType) {
+    throw new Error('ข้อมูลลงเวลาไม่ถูกต้อง');
+  }
+  const entries = getTimesheetEntries();
+  const minutes = sanitizeMinutes(payload.minutes);
+  const updatedAt = new Date().toISOString();
+  const sameIdx = entries.findIndex((e) =>
+    e.userId === userId &&
+    e.date === date &&
+    e.projectId === projectId &&
+    e.taskType === taskType
+  );
+  const next: TimesheetEntry = {
+    id: sameIdx >= 0 ? entries[sameIdx].id : Math.random().toString(36).substring(2, 11),
+    userId,
+    date,
+    projectId,
+    taskType,
+    minutes,
+    updatedAt,
+  };
+  if (sameIdx >= 0) {
+    entries[sameIdx] = next;
+  } else {
+    entries.unshift(next);
+  }
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_ENTRIES, JSON.stringify(entries));
+  return next;
+};
+
+export const getTimesheetEntriesByDate = (userId: string, date: string): TimesheetEntry[] => {
+  const uid = normalizeUserId(userId);
+  return getTimesheetEntries(uid).filter((e) => e.date === date);
+};
 
 export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRecord => {
   const records = getAttendanceRecords();
