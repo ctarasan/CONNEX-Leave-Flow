@@ -1,4 +1,4 @@
-import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord, TimesheetEntry, TimesheetProject, TIMESHEET_TASK_TYPES } from './types';
+import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord, TimesheetEntry, TimesheetProject, TimesheetTaskTypeDefinition } from './types';
 import { HOLIDAYS_2026 } from './constants';
 import { parseConnexCSV, thaiDateToISODate } from './connexSeed';
 import * as api from './api';
@@ -41,9 +41,18 @@ const STORAGE_KEYS = {
   ATTENDANCE: 'hr_attendance_records',
   TIMESHEET_PROJECTS: 'hr_timesheet_projects',
   TIMESHEET_ENTRIES: 'hr_timesheet_entries',
+  TIMESHEET_TASK_TYPES: 'hr_timesheet_task_types',
   LEAVE_TYPES: 'hr_leave_types',
   ATTENDANCE_LATE_POLICY: 'hr_attendance_late_policy',
 };
+
+const DEFAULT_TIMESHEET_TASK_TYPES: TimesheetTaskTypeDefinition[] = [
+  { id: 'research', label: 'Research', order: 1, isActive: true },
+  { id: 'coding', label: 'Coding', order: 2, isActive: true },
+  { id: 'testing', label: 'Testing', order: 3, isActive: true },
+  { id: 'bug-fixing', label: 'Bug Fixing', order: 4, isActive: true },
+  { id: 'planning', label: 'Planning', order: 5, isActive: true },
+];
 
 export interface AttendanceLatePolicy {
   tiers: Array<{
@@ -683,6 +692,40 @@ function getLocalDateString(date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+function normalizeTimesheetTaskType(raw: unknown): TimesheetTaskTypeDefinition | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const label = String(o.label ?? '').trim();
+  if (!id || !label) return null;
+  const orderRaw = Number(o.order);
+  return {
+    id,
+    label,
+    order: Number.isFinite(orderRaw) ? orderRaw : 0,
+    isActive: o.isActive !== false,
+  };
+}
+
+export const getTimesheetTaskTypes = (): TimesheetTaskTypeDefinition[] => {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null);
+  if (normalized.length === 0) return DEFAULT_TIMESHEET_TASK_TYPES;
+  return normalized.sort((a, b) => a.order - b.order);
+};
+
+export const saveTimesheetTaskTypes = (types: TimesheetTaskTypeDefinition[]): void => {
+  const normalized = types
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+    .sort((a, b) => a.order - b.order);
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES, JSON.stringify(normalized));
+};
+
 function sanitizeMinutes(v: number): number {
   if (!Number.isFinite(v) || v < 0) return 0;
   return Math.min(24 * 60, Math.round(v));
@@ -698,11 +741,17 @@ function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
   if (!id || !code || !name || !managerId) return null;
   const assignedRaw = Array.isArray(o.assignedUserIds) ? o.assignedUserIds : [];
   const assignedUserIds = assignedRaw.map((x) => normalizeUserId(x)).filter(Boolean);
+  const taskDefs = getTimesheetTaskTypes().filter((t) => t.isActive);
   const targetRaw = (o.taskTargetDays && typeof o.taskTargetDays === 'object') ? (o.taskTargetDays as Record<string, unknown>) : {};
   const taskTargetDays: Record<string, number> = {};
-  for (const task of TIMESHEET_TASK_TYPES) {
-    const n = Number(targetRaw[task]);
-    taskTargetDays[task] = Number.isFinite(n) && n >= 0 ? n : 0;
+  for (const task of taskDefs) {
+    const n = Number(targetRaw[task.id]);
+    taskTargetDays[task.id] = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  for (const [k, v] of Object.entries(targetRaw)) {
+    if (taskTargetDays[k] != null) continue;
+    const n = Number(v);
+    taskTargetDays[k] = Number.isFinite(n) && n >= 0 ? n : 0;
   }
   return {
     id,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TIMESHEET_TASK_TYPES } from '../types';
-import { AttendanceLatePolicy, getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject } from '../store';
+import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition } from '../types';
+import { AttendanceLatePolicy, getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 
@@ -67,9 +67,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [projName, setProjName] = useState('');
   const [projManagerId, setProjManagerId] = useState('');
   const [assignedIds, setAssignedIds] = useState<string[]>([]);
-  const [taskTargets, setTaskTargets] = useState<Record<string, number>>(
-    Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0]))
-  );
+  const [taskTargets, setTaskTargets] = useState<Record<string, number>>({});
+  const [taskTypes, setTaskTypes] = useState<TimesheetTaskTypeDefinition[]>([]);
+  const [newTaskLabel, setNewTaskLabel] = useState('');
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
   const refreshUsers = () => setUsers(getAllUsers());
@@ -80,6 +80,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setLeaveTypes(getLeaveTypes());
     setLatePolicy(getAttendanceLatePolicy());
     setTimesheetProjects(getTimesheetProjects());
+    setTaskTypes(getTimesheetTaskTypes());
   }, []);
 
   useEffect(() => {
@@ -89,6 +90,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   }, [activeSubTab, isAdmin]);
 
   const refreshTimesheetProjects = () => setTimesheetProjects(getTimesheetProjects());
+  const refreshTaskTypes = () => setTaskTypes(getTimesheetTaskTypes());
 
   const handleSaveLatePolicy = () => {
     const normalized: AttendanceLatePolicy = {
@@ -321,7 +323,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setProjName('');
     setProjManagerId('');
     setAssignedIds([]);
-    setTaskTargets(Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0])));
+    setTaskTargets(Object.fromEntries(taskTypes.filter((t) => t.isActive).map((t) => [t.id, 0])));
   };
 
   const handleEditProject = (p: TimesheetProject) => {
@@ -330,7 +332,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setProjName(p.name);
     setProjManagerId(p.projectManagerId);
     setAssignedIds([...p.assignedUserIds]);
-    setTaskTargets({ ...Object.fromEntries(TIMESHEET_TASK_TYPES.map((t) => [t, 0])), ...p.taskTargetDays });
+    const base = Object.fromEntries(taskTypes.filter((t) => t.isActive).map((t) => [t.id, 0]));
+    setTaskTargets({ ...base, ...p.taskTargetDays });
     setActiveSubTab('projects');
   };
 
@@ -356,6 +359,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     refreshTimesheetProjects();
     resetProjectForm();
     showAlert('บันทึกข้อมูลโครงการเรียบร้อยแล้ว');
+  };
+
+  const handleAddTaskType = () => {
+    const label = newTaskLabel.trim();
+    if (!label) {
+      showAlert('กรุณาระบุชื่อ Task');
+      return;
+    }
+    const id = `task-${Date.now()}`;
+    const next = [...taskTypes, { id, label, order: taskTypes.length + 1, isActive: true }];
+    saveTimesheetTaskTypes(next);
+    setTaskTypes(getTimesheetTaskTypes());
+    setTaskTargets((prev) => ({ ...prev, [id]: 0 }));
+    setNewTaskLabel('');
+  };
+
+  const handleTaskLabelChange = (id: string, label: string) => {
+    const next = taskTypes.map((t) => t.id === id ? { ...t, label } : t);
+    saveTimesheetTaskTypes(next);
+    refreshTaskTypes();
   };
 
   return (
@@ -420,19 +443,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            {TIMESHEET_TASK_TYPES.map((t) => (
-              <label key={t} className="text-xs font-bold">
-                {t}
+            {taskTypes.filter((t) => t.isActive).map((t) => (
+              <label key={t.id} className="text-xs font-bold">
+                {t.label} (วัน)
                 <input
                   type="number"
                   min={0}
                   step="0.25"
-                  value={taskTargets[t] ?? 0}
-                  onChange={(e) => setTaskTargets((prev) => ({ ...prev, [t]: Number(e.target.value) || 0 }))}
+                  value={taskTargets[t.id] ?? 0}
+                  onChange={(e) => setTaskTargets((prev) => ({ ...prev, [t.id]: Number(e.target.value) || 0 }))}
                   className="mt-1 w-full px-2 py-2 border rounded-xl text-sm font-bold"
                 />
               </label>
             ))}
+          </div>
+          <div className="border rounded-xl p-3 space-y-2">
+            <p className="text-xs font-black text-gray-600">ตั้งค่า Task งาน (Admin)</p>
+            <div className="flex gap-2">
+              <input
+                value={newTaskLabel}
+                onChange={(e) => setNewTaskLabel(e.target.value)}
+                placeholder="เพิ่มชื่อ Task ใหม่ เช่น Review"
+                className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold"
+              />
+              <button
+                type="button"
+                onClick={handleAddTaskType}
+                disabled={!isAdmin}
+                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black disabled:opacity-40"
+              >
+                เพิ่ม Task
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {taskTypes.filter((t) => t.isActive).map((t) => (
+                <div key={`cfg-${t.id}`} className="flex items-center gap-2">
+                  <input
+                    value={t.label}
+                    onChange={(e) => handleTaskLabelChange(t.id, e.target.value)}
+                    disabled={!isAdmin}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold disabled:bg-gray-100"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
           <div className="flex gap-2">
             <button onClick={handleSaveProject} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black">{editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}</button>

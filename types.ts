@@ -90,15 +90,12 @@ export interface MonthlyReport {
   byType: Record<string, number>;
 }
 
-export const TIMESHEET_TASK_TYPES = [
-  'Research',
-  'Coding',
-  'Testing',
-  'Bug Fixing',
-  'Planning',
-] as const;
-
-export type TimesheetTaskType = (typeof TIMESHEET_TASK_TYPES)[number];
+export interface TimesheetTaskTypeDefinition {
+  id: string;
+  label: string;
+  order: number;
+  isActive: boolean;
+}
 
 export interface TimesheetProject {
   id: string;

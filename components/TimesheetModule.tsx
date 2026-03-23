@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { TimesheetEntry, TIMESHEET_TASK_TYPES, User, UserRole } from '../types';
+import { TimesheetEntry, User, UserRole } from '../types';
 import {
   getAllUsers,
   getSubordinateIdsRecursive,
@@ -8,6 +8,7 @@ import {
   getTimesheetEntriesByDate,
   getTimesheetProjects,
   getTimesheetProjectsForUser,
+  getTimesheetTaskTypes,
   saveTimesheetEntry,
 } from '../store';
 
@@ -37,7 +38,7 @@ const startOfWeek = (d: Date): Date => {
 const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate }) => {
   const [selectedDate, setSelectedDate] = useState<string>(toIso(new Date()));
   const [projectId, setProjectId] = useState('');
-  const [taskType, setTaskType] = useState<string>(TIMESHEET_TASK_TYPES[0]);
+  const [taskType, setTaskType] = useState<string>('');
   const [hours, setHours] = useState(8);
   const [minutes, setMinutes] = useState(0);
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
@@ -46,7 +47,10 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const allUsers = useMemo(() => getAllUsers(), [onUpdate]);
   const allEntries = useMemo(() => getTimesheetEntries(), [onUpdate]);
   const allProjects = useMemo(() => getTimesheetProjects(), [onUpdate]);
+  const taskTypes = useMemo(() => getTimesheetTaskTypes().filter((t) => t.isActive), [onUpdate]);
+  const taskLabelMap = useMemo(() => new Map(taskTypes.map((t) => [t.id, t.label])), [taskTypes]);
   const userProjects = useMemo(() => getTimesheetProjectsForUser(currentUser.id), [currentUser.id, onUpdate]);
+  const normalizedTaskType = taskType || taskTypes[0]?.id || '';
   const selectedDateEntries = useMemo(() => getTimesheetEntriesByDate(currentUser.id, selectedDate), [currentUser.id, selectedDate, onUpdate]);
   const selectedMonth = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
@@ -117,10 +121,10 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     const projectIds = new Set(managerProjects.map((p) => p.id));
     const filtered = allEntries.filter((e) => projectIds.has(e.projectId));
     if (pivotMode === 'task') {
-      return TIMESHEET_TASK_TYPES.map((task) => {
-        const row: Record<string, string | number> = { label: task };
+      return taskTypes.map((task) => {
+        const row: Record<string, string | number> = { label: task.label };
         for (const p of managerProjects) {
-          const mins = filtered.filter((e) => e.projectId === p.id && e.taskType === task).reduce((s, e) => s + e.minutes, 0);
+          const mins = filtered.filter((e) => e.projectId === p.id && (e.taskType === task.id || e.taskType === task.label)).reduce((s, e) => s + e.minutes, 0);
           row[p.id] = Number((mins / 60).toFixed(2));
         }
         return row;
@@ -135,7 +139,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       }
       return row;
     });
-  }, [allEntries, allUsers, isManagerOrAdmin, managerProjects, pivotMode]);
+  }, [allEntries, allUsers, isManagerOrAdmin, managerProjects, pivotMode, taskTypes]);
 
   const performanceData = useMemo(() => {
     if (!isManagerOrAdmin) return [];
@@ -175,7 +179,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       userId: currentUser.id,
       date: selectedDate,
       projectId,
-      taskType,
+      taskType: normalizedTaskType,
       minutes: Math.max(0, hours * 60 + minutes),
     });
     onUpdate();
@@ -193,8 +197,8 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
               <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
             ))}
           </select>
-          <select value={taskType} onChange={(e) => setTaskType(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold">
-            {TIMESHEET_TASK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          <select value={normalizedTaskType} onChange={(e) => setTaskType(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold">
+            {taskTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
           <input type="number" min={0} max={24} value={hours} onChange={(e) => setHours(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
           <input type="number" min={0} max={59} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 0)} className="w-24 px-3 py-2 border rounded-xl text-sm font-bold" />
@@ -241,7 +245,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
             return (
               <div key={e.id} className="flex flex-wrap items-center gap-3 border rounded-xl p-3">
                 <span className="text-sm font-bold min-w-60">{p ? `${p.code} - ${p.name}` : e.projectId}</span>
-                <span className="text-xs font-bold text-gray-500">{e.taskType}</span>
+                <span className="text-xs font-bold text-gray-500">{taskLabelMap.get(e.taskType) || e.taskType}</span>
                 <input
                   type="number"
                   min={0}
