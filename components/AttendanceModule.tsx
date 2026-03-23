@@ -35,6 +35,10 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
     const todayStr = getLocalDateString(new Date());
     return records.find(r => r.date === todayStr);
   }, [records]);
+  const hasCheckedInToday = !!todayRecord?.checkIn;
+  const hasCheckedOutToday = !!todayRecord?.checkOut;
+  const canCheckIn = verificationStatus === 'SUCCESS' && !isSubmitting && (!hasCheckedInToday || hasCheckedOutToday);
+  const canCheckOut = !isSubmitting && hasCheckedInToday && !hasCheckedOutToday;
 
   const verifyWiFiNetwork = async () => {
     setIsVerifying(true);
@@ -68,7 +72,6 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   };
 
   const handleAction = async (type: 'IN' | 'OUT') => {
-    const hasCheckedInToday = !!todayRecord?.checkIn;
     if (type === 'IN' && verificationStatus !== 'SUCCESS') {
       showAlert('กรุณาเชื่อมต่อ WiFi ออฟฟิศ แล้วกด "ตรวจสอบเครือข่าย WiFi" ให้ผ่านก่อนลงเวลา');
       return;
@@ -152,14 +155,14 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
           <div className="w-full md:w-72 space-y-4">
             <button 
               onClick={() => handleAction('IN')}
-              disabled={verificationStatus !== 'SUCCESS' || isSubmitting}
+              disabled={!canCheckIn}
               className="w-full h-24 bg-emerald-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คอิน (IN)
             </button>
             <button 
               onClick={() => handleAction('OUT')}
-              disabled={!todayRecord?.checkIn || isSubmitting}
+              disabled={!canCheckOut}
               className="w-full h-24 bg-blue-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คเอาท์ (OUT)
