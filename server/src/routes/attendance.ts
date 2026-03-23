@@ -139,8 +139,15 @@ router.post('/', async (req, res) => {
       `INSERT INTO attendance (user_id, date, check_in, check_out, status)
        VALUES ($1, $2, $3, $4, 'present')
        ON CONFLICT (user_id, date) DO UPDATE SET
-         check_in = COALESCE($3, attendance.check_in),
-         check_out = COALESCE($4, attendance.check_out)`,
+         check_in = CASE
+           WHEN $3 IS NOT NULL THEN $3
+           ELSE attendance.check_in
+         END,
+         check_out = CASE
+           WHEN $3 IS NOT NULL THEN NULL
+           WHEN $4 IS NOT NULL THEN $4
+           ELSE attendance.check_out
+         END`,
       [userId, dateStr, checkInTime, checkOutTime]
     );
     

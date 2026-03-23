@@ -732,6 +732,8 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
     if (type === 'IN') {
       // Allow rewriting today's check-in time when user presses IN again
       record.checkIn = timeStr;
+      // Start a new IN/OUT cycle: clear prior checkout of the same day
+      record.checkOut = undefined;
       record.isLate = timeStr > lateThreshold;
       if (record.isLate && !record.penaltyApplied && user) {
         const penaltyDays = calculateLatePenaltyDays(timeStr);
