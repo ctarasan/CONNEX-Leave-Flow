@@ -45,6 +45,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const [draftMinutes, setDraftMinutes] = useState(0);
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
+  const [performanceProjectId, setPerformanceProjectId] = useState('ALL');
   const [refreshTick, setRefreshTick] = useState(0);
   const todayIso = toIso(new Date());
 
@@ -159,19 +160,22 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
 
   const performanceData = useMemo(() => {
     if (!isManagerOrAdmin) return [];
-    const visibleProjectIds = new Set(managerProjects.map((p) => p.id));
+    const scopedProjects = performanceProjectId === 'ALL'
+      ? managerProjects
+      : managerProjects.filter((p) => p.id === performanceProjectId);
+    const visibleProjectIds = new Set(scopedProjects.map((p) => p.id));
     return taskTypes.map((task) => {
-      const targetHours = managerProjects.reduce((s, p) => s + ((p.taskTargetDays[task.id] ?? 0) * 8), 0);
-      const actualHours = allEntries
+      const targetDays = scopedProjects.reduce((s, p) => s + (p.taskTargetDays[task.id] ?? 0), 0);
+      const actualDays = allEntries
         .filter((e) => visibleProjectIds.has(e.projectId) && (e.taskType === task.id || e.taskType === task.label))
-        .reduce((s, e) => s + e.minutes, 0) / 60;
+        .reduce((s, e) => s + e.minutes, 0) / (8 * 60);
       return {
         task: task.label,
-        target: Number(targetHours.toFixed(2)),
-        actual: Number(actualHours.toFixed(2)),
+        targetDays: Number(targetDays.toFixed(2)),
+        actualDays: Number(actualDays.toFixed(2)),
       };
     });
-  }, [allEntries, isManagerOrAdmin, managerProjects, taskTypes]);
+  }, [allEntries, isManagerOrAdmin, managerProjects, performanceProjectId, taskTypes]);
 
   const teamCandidates = useMemo(() => {
     if (currentUser.role === UserRole.ADMIN) return allUsers.filter((u) => u.id !== currentUser.id);
@@ -389,17 +393,29 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
 
       {isManagerOrAdmin && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-black">Performance โครงการ (เปรียบเทียบ Target & Actual แยกตามประเภทงาน)</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-black">Performance โครงการ (เปรียบเทียบ Target & Actual แยกตามประเภทงาน)</h3>
+            <select
+              value={performanceProjectId}
+              onChange={(e) => setPerformanceProjectId(e.target.value)}
+              className="px-3 py-2 border rounded-xl text-sm font-bold min-w-60"
+            >
+              <option value="ALL">ทุกโครงการที่มีสิทธิ์เห็น</option>
+              {managerProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={performanceData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="task" />
-                <YAxis />
-                <Tooltip />
+                <YAxis tickFormatter={(v) => `${v}`} label={{ value: 'วัน', angle: -90, position: 'insideLeft' }} />
+                <Tooltip formatter={(value: number | string) => [`${value} วัน`, '']} />
                 <Legend />
-                <Bar dataKey="target" fill="#6366f1" name="Target ชั่วโมง" />
-                <Bar dataKey="actual" fill="#06b6d4" name="Actual ชั่วโมง" />
+                <Bar dataKey="targetDays" fill="#6366f1" name="Target (วัน)" />
+                <Bar dataKey="actualDays" fill="#06b6d4" name="Actual (วัน)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
