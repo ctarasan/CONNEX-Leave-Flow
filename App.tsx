@@ -27,8 +27,10 @@ const App: React.FC = () => {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'timesheet' | 'history' | 'report' | 'admin'>('dashboard');
-  const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation' | 'team'>('leave');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'report' | 'admin'>('dashboard');
+  const [attendanceSubTab, setAttendanceSubTab] = useState<'attendance' | 'timesheet'>('attendance');
+  const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation'>('leave');
+  const [reportSubTab, setReportSubTab] = useState<'leave' | 'team'>('leave');
   /** แดชบอร์ด: แสดงเฉพาะ ลาป่วย ลาพักร้อน ลากิจ โดย default; ใช้ลิงก์ "ดูทุกประเภทวันลา" เพื่อแสดงที่เหลือ */
   const [showAllDashboardLeaveTypes, setShowAllDashboardLeaveTypes] = useState(false);
   /** ตัวนับเพื่อ force reportRequests ให้ recompute จาก cache หลัง loadLeaveRequestsForManager หรือ loadFromApi เสร็จ */
@@ -432,13 +434,6 @@ const App: React.FC = () => {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               ประวัติรายการ
             </button>
-            <button
-              onClick={() => setActiveTab('timesheet')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'timesheet' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z" /></svg>
-              Timesheet
-            </button>
             {isManagerOrAdmin && (
               <button 
                 onClick={() => setActiveTab('report')}
@@ -503,9 +498,8 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-black text-gray-900">
               {activeTab === 'dashboard' && 'แดชบอร์ด'}
               {activeTab === 'attendance' && 'ลงเวลาทำงาน'}
-              {activeTab === 'timesheet' && 'ลงเวลาแบบ Timesheet'}
               {activeTab === 'history' && 'ประวัติรายการ'}
-              {activeTab === 'report' && 'รายงานการลา'}
+              {activeTab === 'report' && (reportSubTab === 'leave' ? 'รายงานการลา' : 'รายงานการเข้างานของทีม')}
               {activeTab === 'admin' && 'จัดการระบบ'}
             </h2>
             <p className="text-sm text-gray-500 font-medium">ยินดีต้อนรับกลับมา, {currentUser.name}</p>
@@ -601,8 +595,27 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'attendance' && <AttendanceModule user={currentUser} onUpdate={fetchData} />}
-        {activeTab === 'timesheet' && <TimesheetModule currentUser={currentUser} onUpdate={fetchData} />}
+        {activeTab === 'attendance' && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap gap-2 p-1 bg-gray-100 rounded-xl w-fit">
+              <button
+                onClick={() => setAttendanceSubTab('attendance')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition ${attendanceSubTab === 'attendance' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                ลงเวลาเข้างาน/ออกงาน
+              </button>
+              <button
+                onClick={() => setAttendanceSubTab('timesheet')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition ${attendanceSubTab === 'timesheet' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Timesheet
+              </button>
+            </div>
+            {attendanceSubTab === 'attendance'
+              ? <AttendanceModule user={currentUser} onUpdate={fetchData} />
+              : <TimesheetModule currentUser={currentUser} onUpdate={fetchData} />}
+          </div>
+        )}
 
         {activeTab === 'history' && (
           <div className="space-y-6">
@@ -625,14 +638,6 @@ const App: React.FC = () => {
               >
                 รายละเอียดการหักวันลา
               </button>
-              {isManagerOrAdmin && (
-                <button 
-                  onClick={() => setHistorySubTab('team')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition ${historySubTab === 'team' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  การเข้างานของทีม
-                </button>
-              )}
             </div>
 
             {historySubTab === 'leave' && (
@@ -729,13 +734,30 @@ const App: React.FC = () => {
               <VacationLedger user={currentUser} />
             )}
 
-            {historySubTab === 'team' && isManagerOrAdmin && (
-              <TeamAttendance manager={currentUser} />
-            )}
           </div>
         )}
 
-        {activeTab === 'report' && <ReportSummary requests={reportRequests} currentUser={currentUser} />}
+        {activeTab === 'report' && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap gap-2 p-1 bg-gray-100 rounded-xl w-fit">
+              <button
+                onClick={() => setReportSubTab('leave')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition ${reportSubTab === 'leave' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                รายงานการลา
+              </button>
+              <button
+                onClick={() => setReportSubTab('team')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition ${reportSubTab === 'team' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                รายงานการเข้างานของทีม
+              </button>
+            </div>
+            {reportSubTab === 'leave'
+              ? <ReportSummary requests={reportRequests} currentUser={currentUser} />
+              : <TeamAttendance manager={currentUser} />}
+          </div>
+        )}
         {activeTab === 'admin' && <AdminPanel currentUser={currentUser} onUserDeleted={(id) => { if (currentUser?.id === id) handleLogout(); }} />}
       </main>
       </div>
