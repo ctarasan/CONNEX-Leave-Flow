@@ -158,18 +158,19 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
 
   const performanceData = useMemo(() => {
     if (!isManagerOrAdmin) return [];
-    return managerProjects.map((p) => {
-      const targetHours = Object.values(p.taskTargetDays).reduce((s, d) => s + d * 8, 0);
+    const visibleProjectIds = new Set(managerProjects.map((p) => p.id));
+    return taskTypes.map((task) => {
+      const targetHours = managerProjects.reduce((s, p) => s + ((p.taskTargetDays[task.id] ?? 0) * 8), 0);
       const actualHours = allEntries
-        .filter((e) => e.projectId === p.id)
+        .filter((e) => visibleProjectIds.has(e.projectId) && (e.taskType === task.id || e.taskType === task.label))
         .reduce((s, e) => s + e.minutes, 0) / 60;
       return {
-        project: p.code,
+        task: task.label,
         target: Number(targetHours.toFixed(2)),
         actual: Number(actualHours.toFixed(2)),
       };
     });
-  }, [allEntries, isManagerOrAdmin, managerProjects]);
+  }, [allEntries, isManagerOrAdmin, managerProjects, taskTypes]);
 
   const teamCandidates = useMemo(() => {
     if (currentUser.role === UserRole.ADMIN) return allUsers.filter((u) => u.id !== currentUser.id);
@@ -345,7 +346,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       {isManagerOrAdmin && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-black">Pivot สรุปชั่วโมงโครงการ (เฉพาะที่เป็น PM)</h3>
+            <h3 className="text-lg font-black">สรุปชั่วโมงการทำงานของโครงการฯ</h3>
             <div className="flex gap-2">
               <button onClick={() => setPivotMode('task')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'task' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตาม Task</button>
               <button onClick={() => setPivotMode('employee')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'employee' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตามพนักงาน</button>
@@ -356,7 +357,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
               <thead>
                 <tr className="text-xs text-gray-400">
                   <th className="py-2">{pivotMode === 'task' ? 'ประเภทงาน' : 'พนักงาน'}</th>
-                  {managerProjects.map((p) => <th key={p.id} className="py-2 text-right">{p.code}</th>)}
+                  {managerProjects.map((p) => <th key={p.id} className="py-2 text-right">{p.name}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -376,12 +377,12 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
 
       {isManagerOrAdmin && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-black">Performance โครงการ (Target vs Actual Hours)</h3>
+          <h3 className="text-lg font-black">Performance โครงการ (เปรียบเทียบ Target & Actual แยกตามประเภทงาน)</h3>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={performanceData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="project" />
+                <XAxis dataKey="task" />
                 <YAxis />
                 <Tooltip />
                 <Legend />
