@@ -501,11 +501,13 @@ export async function loadFromApi(): Promise<void> {
 
 export async function loadAttendanceForUser(userId: string): Promise<void> {
   if (!isApiMode()) return;
+  const prev = _attendanceCache.get(userId) ?? [];
   try {
     const res = await api.getAttendance(userId);
     _attendanceCache.set(userId, (res as Record<string, unknown>[]).map(normalizeAttendance));
   } catch {
-    _attendanceCache.set(userId, []);
+    // Keep last known data to avoid random row count drops on transient API errors.
+    _attendanceCache.set(userId, prev);
   }
 }
 

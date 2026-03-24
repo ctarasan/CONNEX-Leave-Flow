@@ -56,7 +56,15 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
         userName: subordinates.find(s => s.id === r.userId)?.name || 'Unknown',
         department: subordinates.find(s => s.id === r.userId)?.department || '-'
       }))
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => {
+        const byDate = b.date.localeCompare(a.date);
+        if (byDate !== 0) return byDate;
+        const byName = a.userName.localeCompare(b.userName, 'th');
+        if (byName !== 0) return byName;
+        const byIn = (a.checkIn ?? '').localeCompare(b.checkIn ?? '');
+        if (byIn !== 0) return byIn;
+        return String(a.id).localeCompare(String(b.id));
+      });
   }, [subordinates, reloadTick]);
 
   const filteredRecords = useMemo(() => {
