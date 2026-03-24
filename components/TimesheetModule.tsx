@@ -163,16 +163,23 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     const scopedProjects = performanceProjectId === 'ALL'
       ? managerProjects
       : managerProjects.filter((p) => p.id === performanceProjectId);
-    const visibleProjectIds = new Set(scopedProjects.map((p) => p.id));
-    return taskTypes.map((task) => {
-      const targetDays = scopedProjects.reduce((s, p) => s + (p.taskTargetDays[task.id] ?? 0), 0);
-      const actualDays = allEntries
-        .filter((e) => visibleProjectIds.has(e.projectId) && (e.taskType === task.id || e.taskType === task.label))
-        .reduce((s, e) => s + e.minutes, 0) / (8 * 60);
+
+    return scopedProjects.map((project) => {
+      const data = taskTypes.map((task) => {
+        const targetDays = project.taskTargetDays[task.id] ?? 0;
+        const actualDays = allEntries
+          .filter((e) => e.projectId === project.id && (e.taskType === task.id || e.taskType === task.label))
+          .reduce((s, e) => s + e.minutes, 0) / (8 * 60);
+        return {
+          task: task.label,
+          targetDays: Number(targetDays.toFixed(2)),
+          actualDays: Number(actualDays.toFixed(2)),
+        };
+      });
       return {
-        task: task.label,
-        targetDays: Number(targetDays.toFixed(2)),
-        actualDays: Number(actualDays.toFixed(2)),
+        projectId: project.id,
+        projectName: `${project.code} - ${project.name}`,
+        data,
       };
     });
   }, [allEntries, isManagerOrAdmin, managerProjects, performanceProjectId, taskTypes]);
@@ -406,19 +413,29 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
               ))}
             </select>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="task" />
-                <YAxis tickFormatter={(v) => `${v}`} label={{ value: 'วัน', angle: -90, position: 'insideLeft' }} />
-                <Tooltip formatter={(value: number | string) => [`${value} วัน`, '']} />
-                <Legend />
-                <Bar dataKey="targetDays" fill="#6366f1" name="Target (วัน)" />
-                <Bar dataKey="actualDays" fill="#06b6d4" name="Actual (วัน)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {performanceData.length === 0 && (
+            <p className="text-sm text-gray-400 italic">ยังไม่มีข้อมูลโครงการสำหรับแสดงกราฟ</p>
+          )}
+          {performanceData.map((chart) => (
+            <div key={chart.projectId} className="border rounded-2xl p-3">
+              {performanceProjectId === 'ALL' && (
+                <p className="text-sm font-black text-gray-700 mb-2">{chart.projectName}</p>
+              )}
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chart.data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="task" />
+                    <YAxis tickFormatter={(v) => `${v}`} label={{ value: 'วัน', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip formatter={(value: number | string, name: string) => [`${value} วัน`, name === 'targetDays' ? 'Target (วัน)' : 'Actual (วัน)']} />
+                    <Legend />
+                    <Bar dataKey="targetDays" fill="#6366f1" name="Target (วัน)" />
+                    <Bar dataKey="actualDays" fill="#06b6d4" name="Actual (วัน)" minPointSize={3} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
