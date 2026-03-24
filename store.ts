@@ -116,21 +116,57 @@ async function migrateLocalTimesheetToApiIfNeeded(apiTaskTypes: TimesheetTaskTyp
   const localProjects = getLocalTimesheetProjects();
   const localEntries = getLocalTimesheetEntries();
 
-  const shouldMigrateTaskTypes = apiTaskTypes.length === 0 && localTaskTypes.length > 0;
-  const shouldMigrateProjects = apiProjects.length === 0 && localProjects.length > 0;
-  const shouldMigrateEntries = apiEntries.length === 0 && localEntries.length > 0;
+  const shouldMigrateTaskTypes = localTaskTypes.length > 0;
+  const shouldMigrateProjects = localProjects.length > 0;
+  const shouldMigrateEntries = localEntries.length > 0;
 
   if (!shouldMigrateTaskTypes && !shouldMigrateProjects && !shouldMigrateEntries) return;
 
   try {
+    const apiTaskMap = new Map(apiTaskTypes.map((t) => [t.id, t]));
+    const apiProjectMap = new Map(apiProjects.map((p) => [p.id, p]));
+    const apiEntryMap = new Map(apiEntries.map((e) => [`${e.userId}|${e.date}|${e.projectId}|${e.taskType}`, e]));
+
     if (shouldMigrateTaskTypes) {
-      await api.putTimesheetTaskTypes(localTaskTypes as unknown as Record<string, unknown>[]);
+      const changedTaskTypes = localTaskTypes.filter((t) => {
+        const existing = apiTaskMap.get(t.id);
+        return !existing || existing.label !== t.label || existing.order !== t.order || existing.isActive !== t.isActive;
+      });
+      if (changedTaskTypes.length > 0) {
+        await api.putTimesheetTaskTypes(localTaskTypes as unknown as Record<string, unknown>[]);
+      }
     }
     if (shouldMigrateProjects) {
-      await Promise.all(localProjects.map((p) => api.postTimesheetProject(p as unknown as Record<string, unknown>)));
+      const changedProjects = localProjects.filter((p) => {
+        const existing = apiProjectMap.get(p.id);
+        if (!existing) return true;
+        const aUsers = [...p.assignedUserIds].sort().join(',');
+        const bUsers = [...existing.assignedUserIds].sort().join(',');
+        const aTargets = JSON.stringify(p.taskTargetDays);
+        const bTargets = JSON.stringify(existing.taskTargetDays);
+        return (
+          p.code !== existing.code ||
+          p.name !== existing.name ||
+          p.projectManagerId !== existing.projectManagerId ||
+          p.isActive !== existing.isActive ||
+          aUsers !== bUsers ||
+          aTargets !== bTargets
+        );
+      });
+      if (changedProjects.length > 0) {
+        await Promise.all(changedProjects.map((p) => api.postTimesheetProject(p as unknown as Record<string, unknown>)));
+      }
     }
     if (shouldMigrateEntries) {
-      await Promise.all(localEntries.map((e) => api.postTimesheetEntry(e)));
+      const changedEntries = localEntries.filter((e) => {
+        const key = `${e.userId}|${e.date}|${e.projectId}|${e.taskType}`;
+        const existing = apiEntryMap.get(key);
+        if (!existing) return true;
+        return existing.minutes !== e.minutes;
+      });
+      if (changedEntries.length > 0) {
+        await Promise.all(changedEntries.map((e) => api.postTimesheetEntry(e)));
+      }
     }
     const [tasksRes, projectsRes, entriesRes] = await Promise.all([
       api.getTimesheetTaskTypes(),
@@ -148,7 +184,7 @@ async function migrateLocalTimesheetToApiIfNeeded(apiTaskTypes: TimesheetTaskTyp
       .map(normalizeTimesheetEntry)
       .filter((x): x is TimesheetEntry => x !== null)
       .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
-    console.log('[timesheet-migrate] localStorage data migrated to API');
+    console.log('[timesheet-migrate] localStorage data synced to API');
   } catch (err) {
     console.error('[timesheet-migrate] migration failed:', err);
   }
