@@ -70,6 +70,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [taskTargets, setTaskTargets] = useState<Record<string, number>>({});
   const [taskTypes, setTaskTypes] = useState<TimesheetTaskTypeDefinition[]>([]);
   const [newTaskLabel, setNewTaskLabel] = useState('');
+  const [projectTab, setProjectTab] = useState<'project' | 'task'>('project');
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
   const refreshUsers = () => setUsers(getAllUsers());
@@ -91,6 +92,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
 
   const refreshTimesheetProjects = () => setTimesheetProjects(getTimesheetProjects());
   const refreshTaskTypes = () => setTaskTypes(getTimesheetTaskTypes());
+  const usersByDepartment = useMemo(() => {
+    const map = new Map<string, User[]>();
+    for (const u of users) {
+      const dept = (u.department || 'ไม่ระบุแผนก').trim() || 'ไม่ระบุแผนก';
+      const list = map.get(dept) ?? [];
+      list.push(u);
+      map.set(dept, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'th'));
+  }, [users]);
 
   const handleSaveLatePolicy = () => {
     const normalized: AttendanceLatePolicy = {
@@ -335,6 +346,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const base = Object.fromEntries(taskTypes.filter((t) => t.isActive).map((t) => [t.id, 0]));
     setTaskTargets({ ...base, ...p.taskTargetDays });
     setActiveSubTab('projects');
+    setProjectTab('project');
   };
 
   const handleSaveProject = () => {
@@ -417,109 +429,136 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       {activeSubTab === 'projects' ? (
         <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 space-y-4">
           <h2 className="text-xl font-bold text-gray-900">จัดการโครงการ (Manager/Admin)</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input value={projCode} onChange={(e) => setProjCode(e.target.value)} placeholder="รหัสโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold" />
-            <input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="ชื่อโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-2" />
-            <select value={projManagerId} onChange={(e) => setProjManagerId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-3">
-              <option value="">เลือก Project Manager</option>
-              {users.filter((u) => u.role !== UserRole.EMPLOYEE).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-xl w-fit">
+            <button
+              onClick={() => setProjectTab('project')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition ${projectTab === 'project' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              โครงการ
+            </button>
+            <button
+              onClick={() => setProjectTab('task')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition ${projectTab === 'task' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Task งาน
+            </button>
           </div>
-          <div>
-            <p className="text-xs font-black text-gray-500 mb-2">กำหนดพนักงานในโครงการ</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 max-h-44 overflow-auto border rounded-xl p-3">
-              {users.map((u) => (
-                <label key={u.id} className="text-xs font-bold flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={assignedIds.includes(u.id)}
-                    onChange={(e) => {
-                      setAssignedIds((prev) => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter((id) => id !== u.id));
-                    }}
-                  />
-                  {u.name}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            {taskTypes.filter((t) => t.isActive).map((t) => (
-              <label key={t.id} className="text-xs font-bold">
-                {t.label} (วัน)
-                <input
-                  type="number"
-                  min={0}
-                  max={999}
-                  step="0.25"
-                  value={taskTargets[t.id] ?? 0}
-                  onChange={(e) =>
-                    setTaskTargets((prev) => ({
-                      ...prev,
-                      [t.id]: Math.min(999, Math.max(0, Number(e.target.value) || 0)),
-                    }))
-                  }
-                  className="mt-1 w-full px-2 py-2 border rounded-xl text-sm font-bold"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="border rounded-xl p-3 space-y-2">
-            <p className="text-xs font-black text-gray-600">ตั้งค่า Task งาน (Admin)</p>
-            <div className="flex gap-2">
-              <input
-                value={newTaskLabel}
-                onChange={(e) => setNewTaskLabel(e.target.value)}
-                placeholder="เพิ่มชื่อ Task ใหม่ เช่น Review"
-                className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold"
-              />
-              <button
-                type="button"
-                onClick={handleAddTaskType}
-                disabled={!isAdmin}
-                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black disabled:opacity-40"
-              >
-                เพิ่ม Task
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {taskTypes.filter((t) => t.isActive).map((t) => (
-                <div key={`cfg-${t.id}`} className="flex items-center gap-2">
-                  <input
-                    value={t.label}
-                    onChange={(e) => handleTaskLabelChange(t.id, e.target.value)}
-                    disabled={!isAdmin}
-                    className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold disabled:bg-gray-100"
-                  />
+
+          {projectTab === 'project' ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input value={projCode} onChange={(e) => setProjCode(e.target.value)} placeholder="รหัสโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold" />
+                <input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="ชื่อโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-2" />
+                <select value={projManagerId} onChange={(e) => setProjManagerId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-3">
+                  <option value="">เลือก Project Manager</option>
+                  {users.filter((u) => u.role !== UserRole.EMPLOYEE).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <p className="text-xs font-black text-gray-500 mb-2">กำหนดพนักงานในโครงการ (จัดกลุ่มตามแผนก)</p>
+                <div className="max-h-56 overflow-auto border rounded-xl p-3 space-y-3">
+                  {usersByDepartment.map(([dept, deptUsers]) => (
+                    <div key={dept} className="space-y-2">
+                      <p className="text-[11px] font-black text-indigo-700">{dept}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {deptUsers.map((u) => (
+                          <label key={u.id} className="text-xs font-bold flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={assignedIds.includes(u.id)}
+                              onChange={(e) => {
+                                setAssignedIds((prev) => e.target.checked ? Array.from(new Set([...prev, u.id])) : prev.filter((id) => id !== u.id));
+                              }}
+                            />
+                            {u.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleSaveProject} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black">{editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}</button>
-            {editProject && <button onClick={resetProjectForm} className="px-4 py-2 bg-gray-200 rounded-xl text-sm font-black">ยกเลิกแก้ไข</button>}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs text-gray-400">
-                  <th className="py-2">รหัส</th>
-                  <th className="py-2">ชื่อโครงการ</th>
-                  <th className="py-2">PM</th>
-                  <th className="py-2 text-right">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timesheetProjects.filter((p) => p.isActive).map((p) => (
-                  <tr key={p.id} className="border-t">
-                    <td className="py-2 font-black">{p.code}</td>
-                    <td className="py-2">{p.name}</td>
-                    <td className="py-2">{users.find((u) => u.id === p.projectManagerId)?.name || '-'}</td>
-                    <td className="py-2 text-right"><button onClick={() => handleEditProject(p)} className="text-blue-600 text-xs font-black">แก้ไข</button></td>
-                  </tr>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                {taskTypes.filter((t) => t.isActive).map((t) => (
+                  <label key={t.id} className="text-xs font-bold">
+                    {t.label} (วัน)
+                    <input
+                      type="number"
+                      min={0}
+                      max={999}
+                      step="0.25"
+                      value={taskTargets[t.id] ?? 0}
+                      onChange={(e) =>
+                        setTaskTargets((prev) => ({
+                          ...prev,
+                          [t.id]: Math.min(999, Math.max(0, Number(e.target.value) || 0)),
+                        }))
+                      }
+                      className="mt-1 w-full px-2 py-2 border rounded-xl text-sm font-bold"
+                    />
+                  </label>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleSaveProject} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black">{editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}</button>
+                {editProject && <button onClick={resetProjectForm} className="px-4 py-2 bg-gray-200 rounded-xl text-sm font-black">ยกเลิกแก้ไข</button>}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400">
+                      <th className="py-2">รหัส</th>
+                      <th className="py-2">ชื่อโครงการ</th>
+                      <th className="py-2">PM</th>
+                      <th className="py-2 text-right">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timesheetProjects.filter((p) => p.isActive).map((p) => (
+                      <tr key={p.id} className="border-t">
+                        <td className="py-2 font-black">{p.code}</td>
+                        <td className="py-2">{p.name}</td>
+                        <td className="py-2">{users.find((u) => u.id === p.projectManagerId)?.name || '-'}</td>
+                        <td className="py-2 text-right"><button onClick={() => handleEditProject(p)} className="text-blue-600 text-xs font-black">แก้ไข</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="border rounded-xl p-3 space-y-2">
+              <p className="text-xs font-black text-gray-600">ตั้งค่า Task งาน (Admin)</p>
+              <div className="flex gap-2">
+                <input
+                  value={newTaskLabel}
+                  onChange={(e) => setNewTaskLabel(e.target.value)}
+                  placeholder="เพิ่มชื่อ Task ใหม่ เช่น Review"
+                  className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddTaskType}
+                  disabled={!isAdmin}
+                  className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black disabled:opacity-40"
+                >
+                  เพิ่ม Task
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {taskTypes.filter((t) => t.isActive).map((t) => (
+                  <div key={`cfg-${t.id}`} className="flex items-center gap-2">
+                    <input
+                      value={t.label}
+                      onChange={(e) => handleTaskLabelChange(t.id, e.target.value)}
+                      disabled={!isAdmin}
+                      className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold disabled:bg-gray-100"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : activeSubTab === 'employees' ? (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
