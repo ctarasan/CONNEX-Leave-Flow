@@ -116,8 +116,20 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
 
   const managerProjects = useMemo(() => {
     if (!isManagerOrAdmin) return [];
-    return allProjects.filter((p) => p.isActive && p.projectManagerId === currentUser.id);
-  }, [allProjects, currentUser.id, isManagerOrAdmin]);
+    if (currentUser.role === UserRole.ADMIN) {
+      // Admin can see all active projects.
+      return allProjects.filter((p) => p.isActive);
+    }
+    // Manager can see projects managed by self and manager/admin subordinates in reporting line.
+    const subordinateIds = getSubordinateIdsRecursive(currentUser.id, allUsers);
+    const visibleManagerIds = new Set(
+      [currentUser.id, ...subordinateIds]
+        .map((id) => allUsers.find((u) => u.id === id))
+        .filter((u): u is User => !!u && (u.role === UserRole.MANAGER || u.role === UserRole.ADMIN))
+        .map((u) => u.id)
+    );
+    return allProjects.filter((p) => p.isActive && visibleManagerIds.has(p.projectManagerId));
+  }, [allProjects, allUsers, currentUser.id, currentUser.role, isManagerOrAdmin]);
 
   const pivotRows = useMemo(() => {
     if (!isManagerOrAdmin) return [];
