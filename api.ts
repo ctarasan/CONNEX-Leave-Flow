@@ -242,6 +242,81 @@ export async function postAttendance(userId: string, type: 'IN' | 'OUT'): Promis
   return res.json();
 }
 
+export async function getTimesheetTaskTypes(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/task-types`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดประเภทงาน Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function putTimesheetTaskTypes(types: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/task-types`, {
+    method: 'PUT',
+    body: JSON.stringify(types),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกประเภทงาน Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getTimesheetProjects(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/projects`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดโครงการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postTimesheetProject(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/projects`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกโครงการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getTimesheetEntries(params?: { userId?: string; date?: string; projectId?: string }): Promise<Record<string, unknown>[]> {
+  const q = new URLSearchParams();
+  if (params?.userId) q.set('userId', params.userId);
+  if (params?.date) q.set('date', params.date);
+  if (params?.projectId) q.set('projectId', params.projectId);
+  const query = q.toString();
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/entries${query ? `?${query}` : ''}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postTimesheetEntry(body: {
+  id?: string;
+  userId: string;
+  date: string;
+  projectId: string;
+  taskType: string;
+  minutes: number;
+}): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/entries`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึก Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
 export async function getNotifications(userId: string): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/notifications?userId=${encodeURIComponent(userId)}`);
   if (!res.ok) {

@@ -76,6 +76,9 @@ let _leaveTypesCache: LeaveTypeDefinition[] | null = null;
 let _holidaysCache: Record<string, string> | null = null;
 const _attendanceCache = new Map<string, AttendanceRecord[]>();
 const _notificationsCache = new Map<string, Notification[]>();
+let _timesheetTaskTypesCache: TimesheetTaskTypeDefinition[] | null = null;
+let _timesheetProjectsCache: TimesheetProject[] | null = null;
+let _timesheetEntriesCache: TimesheetEntry[] | null = null;
 
 function normalizeAttendanceLatePolicy(raw: unknown): AttendanceLatePolicy {
   const normalizeTime = (v: unknown, fallback: string): string => {
@@ -321,11 +324,14 @@ function normalizeHolidaysResponse(raw: unknown): Record<string, string> {
 /** โหลดข้อมูลจาก API (เรียกเมื่อเปิดแอปในโหมด Supabase) — รองรับ multi-user */
 export async function loadFromApi(): Promise<void> {
   if (!isApiMode()) return;
-  const [usersRes, typesRes, requestsRes, holidaysRes] = await Promise.allSettled([
+  const [usersRes, typesRes, requestsRes, holidaysRes, tsTasksRes, tsProjectsRes, tsEntriesRes] = await Promise.allSettled([
     api.getUsers(),
     api.getLeaveTypes(),
     api.getLeaveRequests(),
     api.getHolidays(),
+    api.getTimesheetTaskTypes(),
+    api.getTimesheetProjects(),
+    api.getTimesheetEntries(),
   ]);
 
   if (usersRes.status === 'rejected') {
@@ -351,6 +357,30 @@ export async function loadFromApi(): Promise<void> {
     console.error('[loadFromApi] getHolidays failed:', holidaysRes.reason);
   } else if (holidaysRes.status === 'fulfilled') {
     _holidaysCache = normalizeHolidaysResponse(holidaysRes.value as Record<string, unknown>);
+  }
+  if (tsTasksRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetTaskTypes failed:', tsTasksRes.reason);
+  } else {
+    const list = toArray(tsTasksRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetTaskType)
+      .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+      .sort((a, b) => a.order - b.order);
+    _timesheetTaskTypesCache = list.length > 0 ? list : DEFAULT_TIMESHEET_TASK_TYPES;
+  }
+  if (tsProjectsRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetProjects failed:', tsProjectsRes.reason);
+  } else {
+    _timesheetProjectsCache = toArray(tsProjectsRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+  }
+  if (tsEntriesRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetEntries failed:', tsEntriesRes.reason);
+  } else {
+    _timesheetEntriesCache = toArray(tsEntriesRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetEntry)
+      .filter((x): x is TimesheetEntry => x !== null)
+      .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
   }
 }
 
@@ -708,6 +738,7 @@ function normalizeTimesheetTaskType(raw: unknown): TimesheetTaskTypeDefinition |
 }
 
 export const getTimesheetTaskTypes = (): TimesheetTaskTypeDefinition[] => {
+  if (isApiMode() && _timesheetTaskTypesCache) return _timesheetTaskTypesCache;
   const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES);
   const parsed = safeJsonParse<unknown[]>(stored, []);
   const list = Array.isArray(parsed) ? parsed : [];
@@ -723,6 +754,18 @@ export const saveTimesheetTaskTypes = (types: TimesheetTaskTypeDefinition[]): vo
     .map(normalizeTimesheetTaskType)
     .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
     .sort((a, b) => a.order - b.order);
+  if (isApiMode()) {
+    _timesheetTaskTypesCache = normalized;
+    api.putTimesheetTaskTypes(normalized as unknown as Record<string, unknown>[])
+      .then((res) => {
+        const list = toArray(res as Record<string, unknown>[])
+          .map(normalizeTimesheetTaskType)
+          .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+          .sort((a, b) => a.order - b.order);
+        _timesheetTaskTypesCache = list.length > 0 ? list : normalized;
+      })
+      .catch((err) => console.error('[saveTimesheetTaskTypes] API failed:', err));
+  }
   localStorage.setItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES, JSON.stringify(normalized));
 };
 
@@ -737,12 +780,14 @@ function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
   const id = String(o.id ?? '').trim();
   const code = String(o.code ?? '').trim();
   const name = String(o.name ?? '').trim();
-  const managerId = normalizeUserId(o.projectManagerId ?? '');
+  const managerId = normalizeUserId(o.projectManagerId ?? o.project_manager_id ?? '');
   if (!id || !code || !name || !managerId) return null;
-  const assignedRaw = Array.isArray(o.assignedUserIds) ? o.assignedUserIds : [];
+  const assignedRaw = Array.isArray(o.assignedUserIds) ? o.assignedUserIds : (Array.isArray(o.assigned_user_ids) ? o.assigned_user_ids : []);
   const assignedUserIds = assignedRaw.map((x) => normalizeUserId(x)).filter(Boolean);
   const taskDefs = getTimesheetTaskTypes().filter((t) => t.isActive);
-  const targetRaw = (o.taskTargetDays && typeof o.taskTargetDays === 'object') ? (o.taskTargetDays as Record<string, unknown>) : {};
+  const targetRaw = (o.taskTargetDays && typeof o.taskTargetDays === 'object')
+    ? (o.taskTargetDays as Record<string, unknown>)
+    : ((o.task_target_days && typeof o.task_target_days === 'object') ? (o.task_target_days as Record<string, unknown>) : {});
   const taskTargetDays: Record<string, number> = {};
   for (const task of taskDefs) {
     const n = Number(targetRaw[task.id]);
@@ -768,10 +813,10 @@ function normalizeTimesheetEntry(raw: unknown): TimesheetEntry | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
   const id = String(o.id ?? '').trim();
-  const userId = normalizeUserId(o.userId ?? '');
-  const date = String(o.date ?? '').trim();
-  const projectId = String(o.projectId ?? '').trim();
-  const taskType = String(o.taskType ?? '').trim();
+  const userId = normalizeUserId(o.userId ?? o.user_id ?? '');
+  const date = toDateOnly(o.date ?? o.entry_date ?? '');
+  const projectId = String(o.projectId ?? o.project_id ?? '').trim();
+  const taskType = String(o.taskType ?? o.task_type_id ?? '').trim();
   if (!id || !userId || !date || !projectId || !taskType) return null;
   return {
     id,
@@ -780,11 +825,12 @@ function normalizeTimesheetEntry(raw: unknown): TimesheetEntry | null {
     projectId,
     taskType,
     minutes: sanitizeMinutes(Number(o.minutes ?? 0)),
-    updatedAt: String(o.updatedAt ?? new Date().toISOString()),
+    updatedAt: String(o.updatedAt ?? o.updated_at ?? new Date().toISOString()),
   };
 }
 
 export const getTimesheetProjects = (): TimesheetProject[] => {
+  if (isApiMode() && _timesheetProjectsCache) return _timesheetProjectsCache;
   const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_PROJECTS);
   const parsed = safeJsonParse<unknown[]>(stored, []);
   const list = Array.isArray(parsed) ? parsed : [];
@@ -794,6 +840,12 @@ export const getTimesheetProjects = (): TimesheetProject[] => {
 };
 
 export const saveTimesheetProjects = (projects: TimesheetProject[]): void => {
+  if (isApiMode()) {
+    const normalized = projects
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+    _timesheetProjectsCache = normalized;
+  }
   localStorage.setItem(STORAGE_KEYS.TIMESHEET_PROJECTS, JSON.stringify(projects));
 };
 
@@ -809,11 +861,30 @@ export const upsertTimesheetProject = (project: TimesheetProject): TimesheetProj
   } else {
     projects.push(normalized);
   }
+  if (isApiMode()) {
+    _timesheetProjectsCache = projects;
+    api.postTimesheetProject(normalized as unknown as Record<string, unknown>)
+      .then((res) => {
+        const saved = normalizeTimesheetProject(res as Record<string, unknown>);
+        if (!saved) return;
+        const current = _timesheetProjectsCache ?? [];
+        const i = current.findIndex((p) => p.id === saved.id);
+        if (i >= 0) current[i] = saved;
+        else current.push(saved);
+        _timesheetProjectsCache = [...current];
+      })
+      .catch((err) => console.error('[upsertTimesheetProject] API failed:', err));
+  }
   saveTimesheetProjects(projects);
   return normalized;
 };
 
 export const getTimesheetEntries = (userId?: string): TimesheetEntry[] => {
+  if (isApiMode() && _timesheetEntriesCache) {
+    if (!userId) return _timesheetEntriesCache;
+    const uid = normalizeUserId(userId);
+    return _timesheetEntriesCache.filter((e) => normalizeUserId(e.userId) === uid);
+  }
   const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_ENTRIES);
   const parsed = safeJsonParse<unknown[]>(stored, []);
   const list = Array.isArray(parsed) ? parsed : [];
@@ -867,6 +938,25 @@ export const saveTimesheetEntry = (payload: {
     entries[sameIdx] = next;
   } else {
     entries.unshift(next);
+  }
+  if (isApiMode()) {
+    _timesheetEntriesCache = entries;
+    api.postTimesheetEntry(next)
+      .then((res) => {
+        const saved = normalizeTimesheetEntry(res as Record<string, unknown>);
+        if (!saved) return;
+        const current = _timesheetEntriesCache ?? [];
+        const i = current.findIndex((e) =>
+          e.userId === saved.userId &&
+          e.date === saved.date &&
+          e.projectId === saved.projectId &&
+          e.taskType === saved.taskType
+        );
+        if (i >= 0) current[i] = saved;
+        else current.unshift(saved);
+        _timesheetEntriesCache = [...current].sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+      })
+      .catch((err) => console.error('[saveTimesheetEntry] API failed:', err));
   }
   localStorage.setItem(STORAGE_KEYS.TIMESHEET_ENTRIES, JSON.stringify(entries));
   return next;
