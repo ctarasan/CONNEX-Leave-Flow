@@ -80,6 +80,80 @@ let _timesheetTaskTypesCache: TimesheetTaskTypeDefinition[] | null = null;
 let _timesheetProjectsCache: TimesheetProject[] | null = null;
 let _timesheetEntriesCache: TimesheetEntry[] | null = null;
 
+function getLocalTimesheetTaskTypes(): TimesheetTaskTypeDefinition[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+    .sort((a, b) => a.order - b.order);
+  return normalized.length > 0 ? normalized : DEFAULT_TIMESHEET_TASK_TYPES;
+}
+
+function getLocalTimesheetProjects(): TimesheetProject[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_PROJECTS);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetProject)
+    .filter((x): x is TimesheetProject => x !== null);
+}
+
+function getLocalTimesheetEntries(): TimesheetEntry[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_ENTRIES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetEntry)
+    .filter((x): x is TimesheetEntry => x !== null)
+    .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+}
+
+async function migrateLocalTimesheetToApiIfNeeded(apiTaskTypes: TimesheetTaskTypeDefinition[], apiProjects: TimesheetProject[], apiEntries: TimesheetEntry[]): Promise<void> {
+  if (!isApiMode()) return;
+  const localTaskTypes = getLocalTimesheetTaskTypes();
+  const localProjects = getLocalTimesheetProjects();
+  const localEntries = getLocalTimesheetEntries();
+
+  const shouldMigrateTaskTypes = apiTaskTypes.length === 0 && localTaskTypes.length > 0;
+  const shouldMigrateProjects = apiProjects.length === 0 && localProjects.length > 0;
+  const shouldMigrateEntries = apiEntries.length === 0 && localEntries.length > 0;
+
+  if (!shouldMigrateTaskTypes && !shouldMigrateProjects && !shouldMigrateEntries) return;
+
+  try {
+    if (shouldMigrateTaskTypes) {
+      await api.putTimesheetTaskTypes(localTaskTypes as unknown as Record<string, unknown>[]);
+    }
+    if (shouldMigrateProjects) {
+      await Promise.all(localProjects.map((p) => api.postTimesheetProject(p as unknown as Record<string, unknown>)));
+    }
+    if (shouldMigrateEntries) {
+      await Promise.all(localEntries.map((e) => api.postTimesheetEntry(e)));
+    }
+    const [tasksRes, projectsRes, entriesRes] = await Promise.all([
+      api.getTimesheetTaskTypes(),
+      api.getTimesheetProjects(),
+      api.getTimesheetEntries(),
+    ]);
+    _timesheetTaskTypesCache = toArray(tasksRes as Record<string, unknown>[])
+      .map(normalizeTimesheetTaskType)
+      .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+      .sort((a, b) => a.order - b.order);
+    _timesheetProjectsCache = toArray(projectsRes as Record<string, unknown>[])
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+    _timesheetEntriesCache = toArray(entriesRes as Record<string, unknown>[])
+      .map(normalizeTimesheetEntry)
+      .filter((x): x is TimesheetEntry => x !== null)
+      .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+    console.log('[timesheet-migrate] localStorage data migrated to API');
+  } catch (err) {
+    console.error('[timesheet-migrate] migration failed:', err);
+  }
+}
+
 function normalizeAttendanceLatePolicy(raw: unknown): AttendanceLatePolicy {
   const normalizeTime = (v: unknown, fallback: string): string => {
     const s = String(v ?? '').trim();
@@ -382,6 +456,11 @@ export async function loadFromApi(): Promise<void> {
       .filter((x): x is TimesheetEntry => x !== null)
       .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
   }
+  await migrateLocalTimesheetToApiIfNeeded(
+    _timesheetTaskTypesCache ?? [],
+    _timesheetProjectsCache ?? [],
+    _timesheetEntriesCache ?? []
+  );
 }
 
 export async function loadAttendanceForUser(userId: string): Promise<void> {
