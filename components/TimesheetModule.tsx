@@ -46,6 +46,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
+  const todayIso = toIso(new Date());
 
   const allUsers = useMemo(() => getAllUsers(), [refreshTick]);
   const allEntries = useMemo(() => getTimesheetEntries(), [refreshTick]);
@@ -190,6 +191,10 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   }, [teamEntries]);
 
   const saveEntry = () => {
+    if (selectedDate > todayIso) {
+      showAlert('ไม่สามารถลง Timesheet ล่วงหน้าได้ (เลือกได้เฉพาะวันนี้หรือย้อนหลัง)');
+      return;
+    }
     if (!draftProjectId) {
       showAlert('กรุณาเลือกโครงการก่อนบันทึก Timesheet');
       return;
@@ -215,7 +220,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
         <h3 className="text-lg font-black text-gray-900">Timesheet Calendar</h3>
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold" />
+          <input type="date" max={todayIso} value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold" />
           <p className="text-sm font-bold text-gray-600">
             วันที่เลือก: {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })}
           </p>
@@ -232,10 +237,17 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
             return (
               <button
                 key={iso}
-                onClick={() => setSelectedDate(iso)}
+                onClick={() => {
+                  if (iso > todayIso) {
+                    showAlert('ไม่สามารถเลือกวันล่วงหน้าเพื่อบันทึก Timesheet ได้');
+                    return;
+                  }
+                  setSelectedDate(iso);
+                }}
+                disabled={iso > todayIso}
                 className={`min-h-20 rounded-xl border p-2 text-left transition ${
                   isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-white hover:border-blue-200'
-                } ${!isCurrentMonth ? 'opacity-40' : ''}`}
+                } ${!isCurrentMonth ? 'opacity-40' : ''} ${iso > todayIso ? 'cursor-not-allowed opacity-40' : ''}`}
               >
                 <div className="text-xs font-black text-gray-700">{d.getDate()}</div>
                 <div className={`text-[10px] font-bold mt-1 ${overtime ? 'text-rose-600' : 'text-gray-500'}`}>

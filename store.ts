@@ -1028,8 +1028,12 @@ export const saveTimesheetEntry = (payload: {
   const date = String(payload.date || '').trim();
   const projectId = String(payload.projectId || '').trim();
   const taskType = String(payload.taskType || '').trim();
+  const today = getLocalDateString(new Date());
   if (!userId || !isValidDateString(date) || !projectId || !taskType) {
     throw new Error('ข้อมูลลงเวลาไม่ถูกต้อง');
+  }
+  if (date > today) {
+    throw new Error('ไม่สามารถลง Timesheet ล่วงหน้าได้ (เลือกได้เฉพาะวันนี้หรือย้อนหลัง)');
   }
   const entries = getTimesheetEntries();
   const minutes = sanitizeMinutes(payload.minutes);

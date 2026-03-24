@@ -16,6 +16,15 @@ function randomId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+function getBangkokDateOnly(): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 router.get('/task-types', async (_req, res) => {
   try {
     const { rows } = await pool.query(
@@ -192,6 +201,9 @@ router.post('/entries', requireAuth, async (req, res) => {
 
     if (!userId || !date || !projectId || !taskType) {
       return res.status(400).json({ error: 'ต้องมี userId, date, projectId, taskType' });
+    }
+    if (date > getBangkokDateOnly()) {
+      return res.status(400).json({ error: 'ไม่สามารถลง Timesheet ล่วงหน้าได้ (เลือกได้เฉพาะวันนี้หรือย้อนหลัง)' });
     }
 
     await pool.query(
