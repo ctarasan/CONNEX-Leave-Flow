@@ -797,16 +797,19 @@ export const addUser = (data: Omit<User, 'id'>): User => {
 };
 
 /** ลบพนักงาน (เช่น ลาออก) — ถ้าเป็นผู้ใช้ที่ล็อกอินอยู่จะออกจากระบบ */
-export const deleteUser = (userId: string): boolean => {
+export const deleteUser = (userId: string): boolean | Promise<boolean> => {
   const users = getAllUsers();
   if (users.length <= 1) return false;
   if (isApiMode()) {
-    api.deleteUser(userId).then(() => api.getUsers()).then((res) => {
-      setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
-    }).catch(() => {});
     const current = getInitialUser();
     if (current?.id === userId) logoutUser();
-    return true;
+    return api.deleteUser(userId)
+      .then(() => api.getUsers())
+      .then((res) => {
+        setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
+        return true;
+      })
+      .catch(() => false);
   }
   const updated = users.filter(u => u.id !== userId);
   if (updated.length === users.length) return false;

@@ -278,11 +278,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     showConfirm(
       `ต้องการลบพนักงาน "${user.name}" ออกจากระบบหรือไม่?\n(ใช้เมื่อพนักงานลาออก)`,
       () => {
-        const ok = deleteUser(user.id);
-        if (ok) {
+        // Optimistic UI: remove row immediately
+        setUsers((prev) => prev.filter((u) => u.id !== user.id));
+        const result = deleteUser(user.id);
+        const onDone = (ok: boolean) => {
+          if (!ok) {
+            refreshUsers();
+            showAlert('ไม่สามารถลบข้อมูลพนักงานได้ กรุณาลองใหม่');
+            return;
+          }
           refreshUsers();
           onUserDeleted?.(user.id);
           showAlert('ลบข้อมูลพนักงานเรียบร้อยแล้ว');
+        };
+        if (result != null && typeof (result as Promise<boolean>).then === 'function') {
+          (result as Promise<boolean>).then(onDone).catch(() => onDone(false));
+        } else {
+          onDone(result === true);
         }
       }
     );
