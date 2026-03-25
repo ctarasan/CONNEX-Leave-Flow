@@ -450,6 +450,8 @@ export async function loadFromApi(): Promise<void> {
 
   if (usersRes.status === 'rejected') {
     console.error('[loadFromApi] getUsers failed:', usersRes.reason);
+    // If API requires auth (not logged in yet), keep demo users available from localStorage.
+    invalidateUsersCache();
   } else {
     const users = toArray(usersRes.value as Record<string, unknown>[]).map(normalizeUser);
     setUsersCache(users);
