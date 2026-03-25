@@ -742,12 +742,23 @@ export const updateUser = (updatedUser: User): void | Promise<void> => {
   if (isApiMode()) {
     const body = { ...updatedUser } as Record<string, unknown>;
     if (body.password === '') delete body.password;
+
+    // Optimistic update: reflect changes immediately in cache
+    const prev = getAllUsers();
+    const optimistic = prev.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+    setUsersCache(optimistic);
+
     const promise = api.putUser(updatedUser.id, body)
       .then(() => api.getUsers())
       .then((res) => {
         setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
       })
-      .catch(() => {});
+      .catch((err) => {
+        // rollback
+        setUsersCache(prev);
+        throw err;
+      });
+
     const current = getInitialUser();
     if (current && current.id === updatedUser.id) saveCurrentUser(updatedUser);
     return promise as Promise<void>;

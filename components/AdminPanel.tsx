@@ -673,13 +673,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                                 ? `ยืนยันระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?`
                                 : `ยืนยันปลดระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?\n(ระบบจะรีเซ็ตจำนวนครั้งที่ลงชื่อเข้าใช้ไม่สำเร็จเป็น 0)`,
                               () => {
-                                const result = updateUser({ ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 });
+                                const patch = { ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 };
+                                // Optimistic UI (so the switch moves immediately)
+                                setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...patch } : u)));
+
+                                const result = updateUser(patch);
                                 const onDone = () => {
                                   refreshUsers();
                                   showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
                                 };
                                 if (result != null && typeof (result as Promise<void>).then === 'function') {
-                                  (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่'));
+                                  (result as Promise<void>)
+                                    .then(onDone)
+                                    .catch(() => {
+                                      // rollback optimistic UI
+                                      setUsers((prev) => prev.map((u) => (u.id === user.id ? user : u)));
+                                      showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่');
+                                    });
                                 } else {
                                   onDone();
                                 }
