@@ -314,6 +314,10 @@ function normalizeUser(u: Record<string, unknown>): User {
     joinDate: String(u.joinDate ?? u.join_date ?? ''),
     managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
     quotas: normalizeQuotaKeys(rawQuotas),
+    isSuspended: u.isSuspended === true || u.is_suspended === true,
+    failedLoginAttempts: u.failedLoginAttempts != null
+      ? Number(u.failedLoginAttempts) || 0
+      : (u.failed_login_attempts != null ? Number(u.failed_login_attempts) || 0 : 0),
   };
 }
 /**
@@ -718,6 +722,8 @@ export const getAllUsers = (): User[] => {
     ...u,
     gender: u.gender ?? inferGenderFromName(u.name),
     quotas: typeof u.quotas === 'object' && u.quotas !== null ? u.quotas : buildQuotasFromLeaveTypes(u.gender ?? inferGenderFromName(u.name)),
+    isSuspended: (u as User).isSuspended === true,
+    failedLoginAttempts: (u as User).failedLoginAttempts != null ? Number((u as User).failedLoginAttempts) || 0 : 0,
   }));
   setUsersCache(normalized);
   return normalized;

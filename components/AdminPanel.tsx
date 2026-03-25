@@ -599,6 +599,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">บทบาท</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ผู้บังคับบัญชา</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">ลาพักร้อน</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">Suspend</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-right">การจัดการ</th>
                 </tr>
               </thead>
@@ -658,6 +659,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         ) : (
                           <>{remaining.toFixed(2)} วันคงเหลือ</>
                         )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <label className="inline-flex items-center gap-2 text-xs font-black text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={user.isSuspended === true}
+                            onChange={(e) => {
+                              const next = e.target.checked;
+                              showConfirm(
+                                next
+                                  ? `ยืนยันระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?`
+                                  : `ยืนยันปลดระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?\n(ระบบจะรีเซ็ตจำนวนครั้งที่ลงชื่อเข้าใช้ไม่สำเร็จเป็น 0)`,
+                                () => {
+                                  const result = updateUser({ ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 });
+                                  const onDone = () => {
+                                    refreshUsers();
+                                    showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
+                                  };
+                                  if (result != null && typeof (result as Promise<void>).then === 'function') {
+                                    (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่'));
+                                  } else {
+                                    onDone();
+                                  }
+                                }
+                              );
+                            }}
+                          />
+                          {user.isSuspended ? 'ระงับ' : 'ปกติ'}
+                        </label>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">

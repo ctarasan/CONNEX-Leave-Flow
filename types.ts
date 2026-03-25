@@ -37,6 +37,10 @@ export interface User {
   managerId?: string;
   /** โควต้าตามประเภทวันลา (key = leaveTypeId) — ตั้งค่าจากประเภทวันลา ไม่แก้ที่หน้าพนักงาน */
   quotas: Record<string, number>;
+  /** ระงับการใช้งานชั่วคราว (Admin เท่านั้นที่ปลดได้) */
+  isSuspended?: boolean;
+  /** จำนวนครั้งที่ใส่รหัสผ่านผิดสะสม (ใช้สำหรับ policy suspend) */
+  failedLoginAttempts?: number;
 }
 
 export interface LeaveRequest {

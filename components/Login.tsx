@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
 import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
-import { getAllUsers, saveCurrentUser, loadFromApi } from '../store';
+import { getAllUsers, saveCurrentUser, loadFromApi, updateUser } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
 
-/** OWASP: Rate limit - max attempts before lockout (client-side; production should enforce server-side). */
-const MAX_ATTEMPTS = 5;
+/** OWASP: Rate limit - max attempts before lockout (client-side; server-side also enforces suspend policy in API mode). */
+const MAX_ATTEMPTS = 3;
 const LOCKOUT_MS = 60_000;
 
 interface LoginProps {
@@ -61,6 +61,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [connectionError, setConnectionError] = useState(false);
   /** ข้อความ error จริงจาก Backend (ใช้แสดงเมื่อ connectionError เพื่อช่วยดีบัก) */
   const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
+  /** ข้อความ error สำหรับกรณี auth/policy (เช่น เตือนครั้งที่ 2, ถูก suspend) */
+  const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,6 +78,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     if (isApiMode()) {
       setConnectionError(false);
       setConnectionErrorMessage(null);
+      setAuthErrorMessage(null);
       apiLogin(email.trim(), password).then(({ user, token }) => {
         setAttempts(0);
         setToken(token);
@@ -89,11 +92,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           (err instanceof ApiError && (err.status >= 500 || err.status === 0)) ||
           /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|Failed to fetch|NetworkError|เซิร์ฟเวอร์ขัดข้อง|connection|timeout|ฐานข้อมูล|database/i.test(msg);
         setConnectionError(!!isDbOrNetwork);
-        setConnectionErrorMessage(msg || null);
+        setConnectionErrorMessage(isDbOrNetwork ? (msg || null) : null);
+        setAuthErrorMessage(!isDbOrNetwork ? (msg || 'ไม่สามารถเข้าสู่ระบบได้') : null);
         const next = attempts + 1;
         setAttempts(next);
         setIsError(true);
-        setTimeout(() => setIsError(false), 3000);
+        setTimeout(() => setIsError(false), 4000);
+        // UI lockout (client-side) — backend จะเป็นตัวบังคับ policy suspend ในโหมด API อยู่แล้ว
         if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
       }).finally(() => {
         setIsSubmitting(false);
@@ -101,8 +106,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       return;
     }
 
-    const foundUser = users.find(u => u.email === email.trim() && u.password === password);
+    const emailTrim = email.trim();
+    const byEmail = users.find(u => u.email === emailTrim);
+    const foundUser = users.find(u => u.email === emailTrim && u.password === password);
     if (foundUser) {
+      if ((foundUser as User).isSuspended) {
+        setIsError(true);
+        setTimeout(() => setIsError(false), 4000);
+        setIsSubmitting(false);
+        return;
+      }
       setAttempts(0);
       saveCurrentUser(foundUser);
       onLogin(foundUser);
@@ -111,11 +124,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const next = attempts + 1;
       setAttempts(next);
       setIsError(true);
-      setTimeout(() => setIsError(false), 3000);
-      if (next >= MAX_ATTEMPTS) {
-        setLockedUntil(Date.now() + LOCKOUT_MS);
-        setTimeout(() => setAttempts(0), LOCKOUT_MS);
+      setTimeout(() => setIsError(false), 4000);
+      // Local mode: suspend after 3 failed attempts (per-user by email)
+      if (byEmail && next >= MAX_ATTEMPTS) {
+        const updated = { ...byEmail, isSuspended: true, failedLoginAttempts: next } as User;
+        updateUser(updated);
+      } else if (byEmail) {
+        const updated = { ...byEmail, failedLoginAttempts: next } as User;
+        updateUser(updated);
       }
+      if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
       setIsSubmitting(false);
     }
   }, [email, password, attempts, lockedUntil, users, onLogin, isSubmitting]);
@@ -173,7 +191,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <p>
                   {connectionError
                     ? 'ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที'
-                    : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'}
+                    : (authErrorMessage || (attempts === 2
+                      ? 'ท่านสามารถลงชื่อเข้าใช้งานได้อีกเพียง 1 ครั้ง หากกรอกข้อมูลไม่ถูกต้องอีก ระบบจะระงับการใช้งานบัญชีของท่านชั่วคราว และโปรดติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ'
+                      : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'))}
                 </p>
                 {connectionError && connectionErrorMessage && (
                   <p className="mt-1 font-normal text-red-600 break-all">สาเหตุ: {connectionErrorMessage}</p>
