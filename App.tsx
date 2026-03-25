@@ -402,6 +402,63 @@ const App: React.FC = () => {
 
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
 
+  const NavIcon: React.FC<{ variant: 'home' | 'clock' | 'history' | 'chart' | 'settings'; active: boolean }> = ({ variant, active }) => {
+    const base = 'w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 transition';
+    const palette: Record<typeof variant, { bg: string; fg: string; bgActive: string; fgActive: string }> = {
+      home: { bg: 'bg-sky-50', fg: 'text-sky-600', bgActive: 'bg-sky-100', fgActive: 'text-sky-700' },
+      clock: { bg: 'bg-emerald-50', fg: 'text-emerald-600', bgActive: 'bg-emerald-100', fgActive: 'text-emerald-700' },
+      history: { bg: 'bg-amber-50', fg: 'text-amber-600', bgActive: 'bg-amber-100', fgActive: 'text-amber-700' },
+      chart: { bg: 'bg-violet-50', fg: 'text-violet-600', bgActive: 'bg-violet-100', fgActive: 'text-violet-700' },
+      settings: { bg: 'bg-rose-50', fg: 'text-rose-600', bgActive: 'bg-rose-100', fgActive: 'text-rose-700' },
+    };
+    const p = palette[variant];
+    const cls = `${base} ${active ? p.bgActive : p.bg} ${active ? p.fgActive : p.fg}`;
+    const iconCls = 'w-5 h-5';
+    if (variant === 'home') {
+      return (
+        <div className={cls} aria-hidden="true">
+          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3.172a2 2 0 0 1 1.238.43l7 5.6a1 1 0 0 1-1.25 1.562L19 10.552V19a2 2 0 0 1-2 2h-3.5a.5.5 0 0 1-.5-.5v-5.25a1.25 1.25 0 0 0-2.5 0V20.5a.5.5 0 0 1-.5.5H7a2 2 0 0 1-2-2v-8.448l-.988.79A1 1 0 1 1 2.762 9.2l7-5.6A2 2 0 0 1 12 3.172Z" />
+          </svg>
+        </div>
+      );
+    }
+    if (variant === 'clock') {
+      return (
+        <div className={cls} aria-hidden="true">
+          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.75a9.25 9.25 0 1 0 0 18.5 9.25 9.25 0 0 0 0-18.5Zm0 1.5a7.75 7.75 0 1 1 0 15.5 7.75 7.75 0 0 1 0-15.5Zm-.25 3a.75.75 0 0 1 .75.75v4.28l3.22 1.86a.75.75 0 1 1-.75 1.3l-3.6-2.08a.75.75 0 0 1-.37-.65V8a.75.75 0 0 1 .75-.75Z" />
+          </svg>
+        </div>
+      );
+    }
+    if (variant === 'history') {
+      return (
+        <div className={cls} aria-hidden="true">
+          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4.25a7.75 7.75 0 1 0 7.75 7.75.75.75 0 0 1 1.5 0 9.25 9.25 0 1 1-3.02-6.86V3a.75.75 0 0 1 1.5 0v4.5a.75.75 0 0 1-.75.75H14a.75.75 0 0 1 0-1.5h2.62A7.72 7.72 0 0 0 12 4.25Zm-.25 3a.75.75 0 0 1 .75.75v4.19l2.9 1.68a.75.75 0 1 1-.75 1.3l-3.28-1.9a.75.75 0 0 1-.37-.65V8a.75.75 0 0 1 .75-.75Z" />
+          </svg>
+        </div>
+      );
+    }
+    if (variant === 'chart') {
+      return (
+        <div className={cls} aria-hidden="true">
+          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4.75 20a.75.75 0 0 1-.75-.75V5a.75.75 0 0 1 1.5 0v13.5H20a.75.75 0 0 1 0 1.5H4.75Zm3-2.25a.75.75 0 0 1-.75-.75v-6a.75.75 0 0 1 1.5 0v6a.75.75 0 0 1-.75.75Zm4 0a.75.75 0 0 1-.75-.75V8a.75.75 0 0 1 1.5 0v9a.75.75 0 0 1-.75.75Zm4 0a.75.75 0 0 1-.75-.75v-4a.75.75 0 0 1 1.5 0v4a.75.75 0 0 1-.75.75Z" />
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div className={cls} aria-hidden="true">
+        <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm0 1.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Zm8.25 2.25a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.54.72l-1.35.4a7.9 7.9 0 0 1-.72 1.73l.7 1.23a.75.75 0 0 1-.11.9l-.35.35a.75.75 0 0 1-.9.11l-1.23-.7a7.9 7.9 0 0 1-1.73.72l-.4 1.35a.75.75 0 0 1-.72.54h-.5a.75.75 0 0 1-.72-.54l-.4-1.35a7.9 7.9 0 0 1-1.73-.72l-1.23.7a.75.75 0 0 1-.9-.11l-.35-.35a.75.75 0 0 1-.11-.9l.7-1.23a7.9 7.9 0 0 1-.72-1.73l-1.35-.4A.75.75 0 0 1 3 13.25v-.5a.75.75 0 0 1 .54-.72l1.35-.4a7.9 7.9 0 0 1 .72-1.73l-.7-1.23a.75.75 0 0 1 .11-.9l.35-.35a.75.75 0 0 1 .9-.11l1.23.7a7.9 7.9 0 0 1 1.73-.72l.4-1.35A.75.75 0 0 1 11.75 3h.5a.75.75 0 0 1 .72.54l.4 1.35a7.9 7.9 0 0 1 1.73.72l1.23-.7a.75.75 0 0 1 .9.11l.35.35a.75.75 0 0 1 .11.9l-.7 1.23a7.9 7.9 0 0 1 .72 1.73l1.35.4a.75.75 0 0 1 .54.72v.5a.75.75 0 0 1-.75.75Z" />
+        </svg>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <div className="flex-1 flex flex-col md:flex-row">
@@ -418,21 +475,21 @@ const App: React.FC = () => {
               onClick={() => setActiveTab('dashboard')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+              <NavIcon variant="home" active={activeTab === 'dashboard'} />
               หน้าแรก
             </button>
             <button 
               onClick={() => setActiveTab('attendance')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'attendance' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <NavIcon variant="clock" active={activeTab === 'attendance'} />
               ลงเวลาทำงาน
             </button>
             <button 
               onClick={() => setActiveTab('history')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'history' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <NavIcon variant="history" active={activeTab === 'history'} />
               ประวัติรายการ
             </button>
             {isManagerOrAdmin && (
@@ -440,7 +497,7 @@ const App: React.FC = () => {
                 onClick={() => setActiveTab('report')}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'report' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002 2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                <NavIcon variant="chart" active={activeTab === 'report'} />
                 รายงานสรุป
               </button>
             )}
@@ -449,7 +506,7 @@ const App: React.FC = () => {
                 onClick={() => setActiveTab('admin')}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'admin' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <NavIcon variant="settings" active={activeTab === 'admin'} />
                 ตั้งค่าระบบ
               </button>
             )}
