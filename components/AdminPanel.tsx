@@ -661,33 +661,56 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <label className="inline-flex items-center gap-2 text-xs font-black text-gray-700">
-                          <input
-                            type="checkbox"
-                            checked={user.isSuspended === true}
-                            onChange={(e) => {
-                              const next = e.target.checked;
-                              showConfirm(
-                                next
-                                  ? `ยืนยันระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?`
-                                  : `ยืนยันปลดระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?\n(ระบบจะรีเซ็ตจำนวนครั้งที่ลงชื่อเข้าใช้ไม่สำเร็จเป็น 0)`,
-                                () => {
-                                  const result = updateUser({ ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 });
-                                  const onDone = () => {
-                                    refreshUsers();
-                                    showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
-                                  };
-                                  if (result != null && typeof (result as Promise<void>).then === 'function') {
-                                    (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่'));
-                                  } else {
-                                    onDone();
-                                  }
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={user.isSuspended === true}
+                          title={user.isSuspended ? 'Suspend: ON' : 'Suspend: OFF'}
+                          onClick={() => {
+                            const next = !(user.isSuspended === true);
+                            showConfirm(
+                              next
+                                ? `ยืนยันระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?`
+                                : `ยืนยันปลดระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?\n(ระบบจะรีเซ็ตจำนวนครั้งที่ลงชื่อเข้าใช้ไม่สำเร็จเป็น 0)`,
+                              () => {
+                                const result = updateUser({ ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 });
+                                const onDone = () => {
+                                  refreshUsers();
+                                  showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
+                                };
+                                if (result != null && typeof (result as Promise<void>).then === 'function') {
+                                  (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่'));
+                                } else {
+                                  onDone();
                                 }
-                              );
-                            }}
+                              }
+                            );
+                          }}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full border transition ${
+                            user.isSuspended ? 'bg-emerald-500 border-emerald-600' : 'bg-gray-200 border-gray-300'
+                          }`}
+                        >
+                          <span className="sr-only">Suspend</span>
+                          <span
+                            className={`absolute left-1 text-[10px] font-black tracking-widest text-white transition-opacity ${
+                              user.isSuspended ? 'opacity-100' : 'opacity-0'
+                            }`}
+                          >
+                            ON
+                          </span>
+                          <span
+                            className={`absolute right-1 text-[10px] font-black tracking-widest text-gray-500 transition-opacity ${
+                              user.isSuspended ? 'opacity-0' : 'opacity-100'
+                            }`}
+                          >
+                            OFF
+                          </span>
+                          <span
+                            className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${
+                              user.isSuspended ? 'translate-x-7' : 'translate-x-0'
+                            }`}
                           />
-                          {user.isSuspended ? 'ระงับ' : 'ปกติ'}
-                        </label>
+                        </button>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
