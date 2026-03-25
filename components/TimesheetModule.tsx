@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TimesheetEntry, User, UserRole } from '../types';
 import {
   getAllUsers,
@@ -43,14 +42,11 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
   const [draftTaskType, setDraftTaskType] = useState<string>('');
   const [draftHours, setDraftHours] = useState(8);
   const [draftMinutes, setDraftMinutes] = useState(0);
-  const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [teamUserId, setTeamUserId] = useState('');
-  const [performanceProjectId, setPerformanceProjectId] = useState('ALL');
   const [refreshTick, setRefreshTick] = useState(0);
   const todayIso = toIso(new Date());
 
   const allUsers = useMemo(() => getAllUsers(), [refreshTick]);
-  const allEntries = useMemo(() => getTimesheetEntries(), [refreshTick]);
   const allProjects = useMemo(() => getTimesheetProjects(), [refreshTick]);
   const taskTypes = useMemo(() => getTimesheetTaskTypes().filter((t) => t.isActive), [refreshTick]);
   const taskLabelMap = useMemo(() => new Map(taskTypes.map((t) => [t.id, t.label])), [taskTypes]);
@@ -115,74 +111,6 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
     for (const e of myEntries) map.set(e.date, (map.get(e.date) ?? 0) + e.minutes);
     return map;
   }, [myEntries]);
-
-  const managerProjects = useMemo(() => {
-    if (!isManagerOrAdmin) return [];
-    if (currentUser.role === UserRole.ADMIN) {
-      // Admin can see all active projects.
-      return allProjects.filter((p) => p.isActive);
-    }
-    // Manager can see projects managed by self and manager/admin subordinates in reporting line.
-    const subordinateIds = getSubordinateIdsRecursive(currentUser.id, allUsers);
-    const visibleManagerIds = new Set(
-      [currentUser.id, ...subordinateIds]
-        .map((id) => allUsers.find((u) => u.id === id))
-        .filter((u): u is User => !!u && (u.role === UserRole.MANAGER || u.role === UserRole.ADMIN))
-        .map((u) => u.id)
-    );
-    return allProjects.filter((p) => p.isActive && visibleManagerIds.has(p.projectManagerId));
-  }, [allProjects, allUsers, currentUser.id, currentUser.role, isManagerOrAdmin]);
-
-  const pivotRows = useMemo(() => {
-    if (!isManagerOrAdmin) return [];
-    const projectIds = new Set(managerProjects.map((p) => p.id));
-    const filtered = allEntries.filter((e) => projectIds.has(e.projectId));
-    if (pivotMode === 'task') {
-      return taskTypes.map((task) => {
-        const row: Record<string, string | number> = { label: task.label };
-        for (const p of managerProjects) {
-          const mins = filtered.filter((e) => e.projectId === p.id && (e.taskType === task.id || e.taskType === task.label)).reduce((s, e) => s + e.minutes, 0);
-          row[p.id] = Number((mins / 60).toFixed(2));
-        }
-        return row;
-      });
-    }
-    const involved = allUsers.filter((u) => managerProjects.some((p) => p.assignedUserIds.includes(u.id)));
-    return involved.map((u) => {
-      const row: Record<string, string | number> = { label: u.name };
-      for (const p of managerProjects) {
-        const mins = filtered.filter((e) => e.projectId === p.id && e.userId === u.id).reduce((s, e) => s + e.minutes, 0);
-        row[p.id] = Number((mins / 60).toFixed(2));
-      }
-      return row;
-    });
-  }, [allEntries, allUsers, isManagerOrAdmin, managerProjects, pivotMode, taskTypes]);
-
-  const performanceData = useMemo(() => {
-    if (!isManagerOrAdmin) return [];
-    const scopedProjects = performanceProjectId === 'ALL'
-      ? managerProjects
-      : managerProjects.filter((p) => p.id === performanceProjectId);
-
-    return scopedProjects.map((project) => {
-      const data = taskTypes.map((task) => {
-        const targetDays = project.taskTargetDays[task.id] ?? 0;
-        const actualDays = allEntries
-          .filter((e) => e.projectId === project.id && (e.taskType === task.id || e.taskType === task.label))
-          .reduce((s, e) => s + e.minutes, 0) / (8 * 60);
-        return {
-          task: task.label,
-          targetDays: Number(targetDays.toFixed(2)),
-          actualDays: Number(actualDays.toFixed(2)),
-        };
-      });
-      return {
-        projectId: project.id,
-        projectName: `${project.code} - ${project.name}`,
-        data,
-      };
-    });
-  }, [allEntries, isManagerOrAdmin, managerProjects, performanceProjectId, taskTypes]);
 
   const teamCandidates = useMemo(() => {
     if (currentUser.role === UserRole.ADMIN) return allUsers.filter((u) => u.id !== currentUser.id);
@@ -365,79 +293,6 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
           </table>
         </div>
       </div>
-
-      {isManagerOrAdmin && (
-        <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-black">สรุปชั่วโมงการทำงานของโครงการฯ</h3>
-            <div className="flex gap-2">
-              <button onClick={() => setPivotMode('task')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'task' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตาม Task</button>
-              <button onClick={() => setPivotMode('employee')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'employee' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตามพนักงาน</button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-400">
-                  <th className="py-2">{pivotMode === 'task' ? 'ประเภทงาน' : 'พนักงาน'}</th>
-                  {managerProjects.map((p) => <th key={p.id} className="py-2 text-right">{p.name}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {pivotRows.map((row, i) => (
-                  <tr key={`${row.label}-${i}`} className="border-t">
-                    <td className="py-2 text-sm font-bold">{String(row.label)}</td>
-                    {managerProjects.map((p) => (
-                      <td key={p.id} className="py-2 text-right text-sm font-black">{Number(row[p.id] ?? 0).toFixed(2)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {isManagerOrAdmin && (
-        <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-lg font-black">Performance โครงการ (เปรียบเทียบ Target & Actual แยกตามประเภทงาน)</h3>
-            <select
-              value={performanceProjectId}
-              onChange={(e) => setPerformanceProjectId(e.target.value)}
-              className="px-3 py-2 border rounded-xl text-sm font-bold min-w-60"
-            >
-              <option value="ALL">ทุกโครงการที่มีสิทธิ์เห็น</option>
-              {managerProjects.map((p) => (
-                <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
-              ))}
-            </select>
-          </div>
-          {performanceData.length === 0 && (
-            <p className="text-sm text-gray-400 italic">ยังไม่มีข้อมูลโครงการสำหรับแสดงกราฟ</p>
-          )}
-          {performanceData.map((chart) => (
-            <div key={chart.projectId} className="border rounded-2xl p-3">
-              {performanceProjectId === 'ALL' && (
-                <p className="text-sm font-black text-gray-700 mb-2">{chart.projectName}</p>
-              )}
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chart.data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="task" />
-                    <YAxis tickFormatter={(v) => `${v}`} label={{ value: 'วัน', angle: -90, position: 'insideLeft' }} />
-                    <Tooltip formatter={(value: number | string, name: string) => [`${value} วัน`, name === 'targetDays' ? 'Target (วัน)' : 'Actual (วัน)']} />
-                    <Legend />
-                    <Bar dataKey="targetDays" fill="#6366f1" name="Target (วัน)" />
-                    <Bar dataKey="actualDays" fill="#06b6d4" name="Actual (วัน)" minPointSize={3} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {isManagerOrAdmin && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">

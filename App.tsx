@@ -12,6 +12,7 @@ import AttendanceModule from './components/AttendanceModule';
 import TeamAttendance from './components/TeamAttendance';
 import VacationLedger from './components/VacationLedger';
 import TimesheetModule from './components/TimesheetModule';
+import ProjectTimesheetReport from './components/ProjectTimesheetReport';
 import Login from './components/Login';
 import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from './constants';
 import { formatThaiDate } from './utils';
@@ -30,7 +31,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'report' | 'admin'>('dashboard');
   const [attendanceSubTab, setAttendanceSubTab] = useState<'attendance' | 'timesheet'>('attendance');
   const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation'>('leave');
-  const [reportSubTab, setReportSubTab] = useState<'leave' | 'team'>('leave');
+  const [reportSubTab, setReportSubTab] = useState<'leave' | 'team' | 'project'>('leave');
   /** แดชบอร์ด: แสดงเฉพาะ ลาป่วย ลาพักร้อน ลากิจ โดย default; ใช้ลิงก์ "ดูทุกประเภทวันลา" เพื่อแสดงที่เหลือ */
   const [showAllDashboardLeaveTypes, setShowAllDashboardLeaveTypes] = useState(false);
   /** ตัวนับเพื่อ force reportRequests ให้ recompute จาก cache หลัง loadLeaveRequestsForManager หรือ loadFromApi เสร็จ */
@@ -499,7 +500,7 @@ const App: React.FC = () => {
               {activeTab === 'dashboard' && 'แดชบอร์ด'}
               {activeTab === 'attendance' && 'ลงเวลาทำงาน'}
               {activeTab === 'history' && 'ประวัติรายการ'}
-              {activeTab === 'report' && (reportSubTab === 'leave' ? 'รายงานการลา' : 'รายงานการเข้างานของทีม')}
+              {activeTab === 'report' && (reportSubTab === 'leave' ? 'รายงานการลา' : reportSubTab === 'team' ? 'รายงานการเข้างานของทีม' : 'รายงานสรุปข้อมูลโครงการฯ')}
               {activeTab === 'admin' && 'จัดการระบบ'}
             </h2>
             <p className="text-sm text-gray-500 font-medium">ยินดีต้อนรับกลับมา, {currentUser.name}</p>
@@ -752,10 +753,16 @@ const App: React.FC = () => {
               >
                 รายงานการเข้างานของทีม
               </button>
+              <button
+                onClick={() => setReportSubTab('project')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition ${reportSubTab === 'project' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                รายงานสรุปข้อมูลโครงการฯ
+              </button>
             </div>
-            {reportSubTab === 'leave'
-              ? <ReportSummary requests={reportRequests} currentUser={currentUser} />
-              : <TeamAttendance manager={currentUser} />}
+            {reportSubTab === 'leave' && <ReportSummary requests={reportRequests} currentUser={currentUser} />}
+            {reportSubTab === 'team' && <TeamAttendance manager={currentUser} />}
+            {reportSubTab === 'project' && <ProjectTimesheetReport currentUser={currentUser} />}
           </div>
         )}
         {activeTab === 'admin' && <AdminPanel currentUser={currentUser} onUserDeleted={(id) => { if (currentUser?.id === id) handleLogout(); }} />}
