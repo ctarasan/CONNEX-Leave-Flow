@@ -720,6 +720,13 @@ export const getAllUsers = (): User[] => {
     setUsersCache(INITIAL_USERS);
     return INITIAL_USERS;
   }
+  // ถ้าข้อมูลใน localStorage ถูกล้าง/กลายเป็น array ว่าง ให้ fallback ไปใช้รายชื่อ demo ตั้งต้น
+  // เพื่อไม่ให้หน้า Login (Demo Access) ว่างเปล่า
+  if (parsed.length === 0) {
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
+    setUsersCache(INITIAL_USERS);
+    return INITIAL_USERS;
+  }
   const normalized = parsed.map(u => ({
     ...u,
     gender: u.gender ?? inferGenderFromName(u.name),
