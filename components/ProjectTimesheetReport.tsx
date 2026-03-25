@@ -7,9 +7,28 @@ interface ProjectTimesheetReportProps {
   currentUser: User;
 }
 
+type TimeScope = 'today' | 'week' | 'month' | 'all';
+
+const toIso = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const startOfWeek = (d: Date): Date => {
+  const x = new Date(d);
+  const day = x.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diff);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
 const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ currentUser }) => {
   const [pivotMode, setPivotMode] = useState<'task' | 'employee'>('task');
   const [performanceProjectId, setPerformanceProjectId] = useState('ALL');
+  const [timeScope, setTimeScope] = useState<TimeScope>('all');
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
 
   const allUsers = useMemo(() => getAllUsers(), []);
@@ -32,10 +51,34 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
     return allProjects.filter((p) => p.isActive && visibleManagerIds.has(p.projectManagerId));
   }, [allProjects, allUsers, currentUser.id, currentUser.role, isManagerOrAdmin]);
 
+  const scopedEntries = useMemo(() => {
+    const now = new Date();
+    const todayIso = toIso(now);
+    if (timeScope === 'all') return allEntries;
+    if (timeScope === 'today') {
+      return allEntries.filter((e) => e.date === todayIso);
+    }
+    if (timeScope === 'week') {
+      const weekStart = startOfWeek(now);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      return allEntries.filter((e) => {
+        const d = new Date(`${e.date}T00:00:00`);
+        return d >= weekStart && d <= weekEnd;
+      });
+    }
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    return allEntries.filter((e) => {
+      const d = new Date(`${e.date}T00:00:00`);
+      return d.getFullYear() === year && d.getMonth() === month;
+    });
+  }, [allEntries, timeScope]);
+
   const pivotRows = useMemo(() => {
     if (!isManagerOrAdmin) return [];
     const projectIds = new Set(managerProjects.map((p) => p.id));
-    const filtered = allEntries.filter((e) => projectIds.has(e.projectId));
+    const filtered = scopedEntries.filter((e) => projectIds.has(e.projectId));
     if (pivotMode === 'task') {
       return taskTypes.map((task) => {
         const row: Record<string, string | number> = { label: task.label };
@@ -54,8 +97,8 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
         row[p.id] = Number((mins / 60).toFixed(2));
       }
       return row;
-    });
-  }, [allEntries, allUsers, isManagerOrAdmin, managerProjects, pivotMode, taskTypes]);
+    }).filter((row) => managerProjects.some((p) => Number(row[p.id] ?? 0) > 0));
+  }, [allUsers, isManagerOrAdmin, managerProjects, pivotMode, scopedEntries, taskTypes]);
 
   const performanceData = useMemo(() => {
     if (!isManagerOrAdmin) return [];
@@ -66,7 +109,7 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
     return scopedProjects.map((project) => {
       const data = taskTypes.map((task) => {
         const targetDays = project.taskTargetDays[task.id] ?? 0;
-        const actualDays = allEntries
+        const actualDays = scopedEntries
           .filter((e) => e.projectId === project.id && (e.taskType === task.id || e.taskType === task.label))
           .reduce((s, e) => s + e.minutes, 0) / (8 * 60);
         return {
@@ -81,7 +124,7 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
         data,
       };
     });
-  }, [allEntries, isManagerOrAdmin, managerProjects, performanceProjectId, taskTypes]);
+  }, [isManagerOrAdmin, managerProjects, performanceProjectId, scopedEntries, taskTypes]);
 
   if (!isManagerOrAdmin) return null;
 
@@ -90,7 +133,17 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black">สรุปชั่วโมงการทำงานของโครงการฯ</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
+            <select
+              value={timeScope}
+              onChange={(e) => setTimeScope(e.target.value as TimeScope)}
+              className="px-3 py-1.5 rounded-lg border text-xs font-black bg-white"
+            >
+              <option value="today">วันนี้</option>
+              <option value="week">สัปดาห์นี้</option>
+              <option value="month">เดือนนี้</option>
+              <option value="all">ทั้งหมด</option>
+            </select>
             <button onClick={() => setPivotMode('task')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'task' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตาม Task</button>
             <button onClick={() => setPivotMode('employee')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'employee' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตามพนักงาน</button>
           </div>
