@@ -649,8 +649,10 @@ function buildInitialUsersFromConnex(): User[] {
       password: row.password,
       role,
       gender,
+      // CSV มี Position เป็น "ชื่อตำแหน่ง" จริง (เช่น Senior System Analyst)
       position: row.position,
-      department: row.position,
+      // CSV ไม่มีคอลัมน์ Department/แผนก — ให้เริ่มเป็นค่าว่าง แล้ว Admin กรอกเองภายหลัง
+      department: '',
       joinDate,
       managerId,
       quotas: getInitialQuotasForGender(gender),

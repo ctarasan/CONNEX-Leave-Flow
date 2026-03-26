@@ -13,7 +13,7 @@ router.get('/', requireAuth, async (_req, res) => {
     let rows: Record<string, unknown>[];
     try {
       const r = await pool.query(
-        `SELECT id, name, email, role, gender, COALESCE(position, department) as position, department, join_date as "joinDate", manager_id as "managerId",
+        `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
           sick_quota, personal_quota, vacation_quota, ordination_quota,
           military_quota, maternity_quota, sterilization_quota, paternity_quota,
           COALESCE(is_suspended, FALSE) as "isSuspended",
@@ -165,7 +165,7 @@ router.put('/:id', async (req, res) => {
       throw uErr;
     }
     const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, COALESCE(position, department) as position, department, join_date as "joinDate", manager_id as "managerId",
+      `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
         sick_quota, personal_quota, vacation_quota, ordination_quota, 
         military_quota, maternity_quota, sterilization_quota, paternity_quota,
         COALESCE(is_suspended, FALSE) as "isSuspended",
