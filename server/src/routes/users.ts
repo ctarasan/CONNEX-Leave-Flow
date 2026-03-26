@@ -25,7 +25,28 @@ router.get('/', requireAuth, async (_req, res) => {
       const msg = qErr instanceof Error ? qErr.message : '';
       if (msg.includes('sick_quota') || msg.includes('quotas') || msg.includes('column')) {
         const r = await pool.query(
-          `SELECT id, name, email, role, gender, department as position, department, join_date as "joinDate", manager_id as "managerId",
+          `SELECT id, name, email, role, gender,
+            CASE id
+              WHEN '001' THEN 'Managing Director'
+              WHEN '002' THEN 'Software Development Manager'
+              WHEN '003' THEN 'Financial Director'
+              WHEN '004' THEN 'Project Manager'
+              WHEN '005' THEN 'Project Manager'
+              WHEN '008' THEN 'แม่บ้าน'
+              WHEN '011' THEN 'System Analyst'
+              WHEN '012' THEN 'Business Analyst'
+              WHEN '013' THEN 'Senior System Analyst'
+              WHEN '017' THEN 'Senior Programmer'
+              WHEN '020' THEN 'Quality Assurance'
+              WHEN '021' THEN 'Brand Strategic Manager'
+              WHEN '023' THEN 'Creative Designer'
+              WHEN '025' THEN 'Quality Assurance'
+              WHEN '026' THEN 'Programmer'
+              WHEN '027' THEN 'Sale Executive'
+              WHEN '028' THEN 'Programmer'
+              ELSE ''
+            END as position,
+            department, join_date as "joinDate", manager_id as "managerId",
             COALESCE(is_suspended, FALSE) as "isSuspended",
             COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
            FROM users ORDER BY id`
@@ -101,7 +122,7 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
