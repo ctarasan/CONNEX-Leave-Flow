@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
 import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
-import { getAllUsers, saveCurrentUser, loadFromApi, updateUser } from '../store';
+import { getAllUsers, saveCurrentUser, loadFromApi, updateUser, normalizeUser } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
 
 /** OWASP: Rate limit - max attempts before lockout (client-side; server-side also enforces suspend policy in API mode). */
@@ -10,47 +10,6 @@ const LOCKOUT_MS = 60_000;
 
 interface LoginProps {
   onLogin: (user: User) => void;
-}
-
-/** แปลง quota keys จาก lowercase (backend) เป็น UPPERCASE (ที่ frontend ใช้) */
-function normalizeQuotaKeys(raw: Record<string, unknown>): Record<string, number> {
-  const KEY_MAP: Record<string, string> = {
-    sick: 'SICK', vacation: 'VACATION', personal: 'PERSONAL',
-    maternity: 'MATERNITY', sterilization: 'STERILIZATION', other: 'OTHER',
-    ordination: 'ORDINATION', military: 'MILITARY', paternity: 'PATERNITY',
-  };
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw)) {
-    const mapped = KEY_MAP[k.toLowerCase()] ?? k.toUpperCase();
-    out[mapped] = Number(v) || 0;
-  }
-  return out;
-}
-
-function normalizeUserId(raw: unknown): string {
-  if (raw == null) return '';
-  const s = String(raw).trim();
-  if (!s) return '';
-  if (/^\d+$/.test(s)) {
-    return String(parseInt(s, 10)).padStart(3, '0');
-  }
-  return s;
-}
-
-function normalizeUser(u: Record<string, unknown>): User {
-  const rawQuotas = (u.quotas && typeof u.quotas === 'object') ? (u.quotas as Record<string, unknown>) : {};
-  return {
-    id: normalizeUserId(u.id ?? ''),
-    name: String(u.name ?? ''),
-    email: String(u.email ?? ''),
-    password: '',
-    role: (u.role as User['role']) ?? 'EMPLOYEE',
-    gender: ((u.gender as User['gender']) ?? 'male'),
-    department: String(u.department ?? ''),
-    joinDate: String(u.joinDate ?? u.join_date ?? ''),
-    managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
-    quotas: normalizeQuotaKeys(rawQuotas),
-  };
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {

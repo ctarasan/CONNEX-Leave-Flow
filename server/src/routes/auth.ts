@@ -48,7 +48,7 @@ router.post('/login', async (req, res) => {
     let rows: Record<string, unknown>[] = [];
     try {
       const r = await pool.query(
-        `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+        `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
           password_hash,
           COALESCE(is_suspended, FALSE) as "isSuspended",
           COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
@@ -58,18 +58,56 @@ router.post('/login', async (req, res) => {
       rows = r.rows as Record<string, unknown>[];
     } catch (qErr) {
       const msg = qErr instanceof Error ? qErr.message : '';
-      if (msg.includes('is_suspended') || msg.includes('failed_login_attempts') || msg.includes('column')) {
-        const r = await pool.query(
-          `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
-            password_hash
-           FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
-          [emailTrimmed]
-        );
-        rows = (r.rows as Record<string, unknown>[]).map((row) => ({
-          ...row,
-          isSuspended: false,
-          failedLoginAttempts: 0,
-        }));
+      if (msg.includes('position') && msg.includes('column')) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash,
+              COALESCE(is_suspended, FALSE) as "isSuspended",
+              COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = r.rows as Record<string, unknown>[];
+        } catch {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        }
+      } else if (msg.includes('is_suspended') || msg.includes('failed_login_attempts') || msg.includes('column')) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        } catch {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        }
       } else {
         throw qErr;
       }

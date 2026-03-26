@@ -301,12 +301,38 @@ export function normalizeUserId(raw: unknown): string {
   return s;
 }
 
-function normalizeUser(u: Record<string, unknown>): User {
+/** ชื่อตำแหน่งตามรหัสพนักงาน (ต้นแบบเดียวกับ migration 008) — ใช้เมื่อ DB ยังเก็บ position ซ้ำกับ department */
+const CANONICAL_POSITION_BY_USER_ID: Record<string, string> = {
+  '001': 'Managing Director',
+  '002': 'Software Development Manager',
+  '003': 'Financial Director',
+  '004': 'Project Manager',
+  '005': 'Project Manager',
+  '008': 'แม่บ้าน',
+  '011': 'System Analyst',
+  '012': 'Business Analyst',
+  '013': 'Senior System Analyst',
+  '017': 'Senior Programmer',
+  '020': 'Quality Assurance',
+  '021': 'Brand Strategic Manager',
+  '023': 'Creative Designer',
+  '025': 'Quality Assurance',
+  '026': 'Programmer',
+  '027': 'Sale Executive',
+  '028': 'Programmer',
+};
+
+export function normalizeUser(u: Record<string, unknown>): User {
   const rawQuotas = (u.quotas && typeof u.quotas === 'object') ? (u.quotas as Record<string, unknown>) : {};
-  const department = String(u.department ?? '');
-  const position = String(u.position ?? u.jobTitle ?? department ?? '');
+  const department = String(u.department ?? '').trim();
+  let position = String(u.position ?? u.jobTitle ?? '').trim();
+  const id = normalizeUserId(u.id ?? '');
+  const canonical = CANONICAL_POSITION_BY_USER_ID[id];
+  if (canonical && (!position || position === department)) {
+    position = canonical;
+  }
   return {
-    id: normalizeUserId(u.id ?? ''),
+    id,
     name: String(u.name ?? ''),
     email: String(u.email ?? ''),
     password: '',
