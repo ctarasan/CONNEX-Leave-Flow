@@ -171,7 +171,7 @@ async function seedUsers() {
           sterilization_quota = EXCLUDED.sterilization_quota,
           paternity_quota = EXCLUDED.paternity_quota`,
         [
-          id, name, email, passwordHash, role, gender, position, position,
+          id, name, email, passwordHash, role, gender, position, '',
           joinDate, managerId,
           quotas.sick, quotas.personal, quotas.vacation, quotas.ordination,
           quotas.military, quotas.maternity, quotas.sterilization, quotas.paternity
