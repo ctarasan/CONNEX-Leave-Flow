@@ -303,6 +303,8 @@ export function normalizeUserId(raw: unknown): string {
 
 function normalizeUser(u: Record<string, unknown>): User {
   const rawQuotas = (u.quotas && typeof u.quotas === 'object') ? (u.quotas as Record<string, unknown>) : {};
+  const department = String(u.department ?? '');
+  const position = String(u.position ?? u.jobTitle ?? department ?? '');
   return {
     id: normalizeUserId(u.id ?? ''),
     name: String(u.name ?? ''),
@@ -310,7 +312,8 @@ function normalizeUser(u: Record<string, unknown>): User {
     password: '',
     role: (u.role as UserRole) ?? UserRole.EMPLOYEE,
     gender: (u.gender as Gender) ?? 'male',
-    department: String(u.department ?? ''),
+    position,
+    department,
     joinDate: String(u.joinDate ?? u.join_date ?? ''),
     managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
     quotas: normalizeQuotaKeys(rawQuotas),
@@ -646,6 +649,7 @@ function buildInitialUsersFromConnex(): User[] {
       password: row.password,
       role,
       gender,
+      position: row.position,
       department: row.position,
       joinDate,
       managerId,
@@ -730,6 +734,7 @@ export const getAllUsers = (): User[] => {
   const normalized = parsed.map(u => ({
     ...u,
     gender: u.gender ?? inferGenderFromName(u.name),
+    position: (u as User).position ?? u.department ?? '',
     quotas: typeof u.quotas === 'object' && u.quotas !== null ? u.quotas : buildQuotasFromLeaveTypes(u.gender ?? inferGenderFromName(u.name)),
     isSuspended: (u as User).isSuspended === true,
     failedLoginAttempts: (u as User).failedLoginAttempts != null ? Number((u as User).failedLoginAttempts) || 0 : 0,

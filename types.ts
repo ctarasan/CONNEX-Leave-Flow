@@ -32,6 +32,7 @@ export interface User {
   password: string;
   role: UserRole;
   gender: Gender;
+  position: string;
   department: string;
   joinDate: string; // ISO string (YYYY-MM-DD)
   managerId?: string;

@@ -46,6 +46,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<UserRole>(UserRole.EMPLOYEE);
   const [newGender, setNewGender] = useState<Gender>('male');
+  const [newPosition, setNewPosition] = useState('');
   const [newDepartment, setNewDepartment] = useState('');
   const [newJoinDate, setNewJoinDate] = useState('');
   const [newManagerId, setNewManagerId] = useState('');
@@ -163,6 +164,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       ...editingUser,
       name: editingUser.name.trim(),
       email: editingUser.email.trim(),
+      position: editingUser.position.trim(),
       department: editingUser.department.trim(),
       password: editPassword.trim() || editingUser.password,
     };
@@ -185,9 +187,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const name = newName.trim();
     const email = newEmail.trim();
     const password = newPassword.trim();
+    const position = newPosition.trim();
     const department = newDepartment.trim();
-    if (!name || !email || !password || !department || !newJoinDate) {
-      showAlert('กรุณากรอกชื่อ อีเมล รหัสผ่าน แผนก และวันเริ่มงาน');
+    if (!name || !email || !password || !position || !department || !newJoinDate) {
+      showAlert('กรุณากรอกชื่อ อีเมล รหัสผ่าน ตำแหน่ง แผนก และวันเริ่มงาน');
       return;
     }
     if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
@@ -200,6 +203,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       password,
       role: newRole,
       gender: newGender,
+      position,
       department,
       joinDate: newJoinDate,
       managerId: newManagerId || undefined,
@@ -222,6 +226,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setNewPassword('');
     setNewRole(UserRole.EMPLOYEE);
     setNewGender('male');
+    setNewPosition('');
     setNewDepartment('');
     setNewJoinDate('');
     setNewManagerId('');
@@ -617,6 +622,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <thead>
                 <tr className="bg-gray-50 text-left">
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">พนักงาน</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ตำแหน่ง</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">แผนก</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">บทบาท</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ผู้บังคับบัญชา</th>
@@ -653,7 +659,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         <div className="text-[10px] text-gray-400 font-bold">{user.email}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600 uppercase">{user.department}</span>
+                        <span className="bg-sky-100 px-2 py-1 rounded text-[10px] font-bold text-sky-700">{user.position || '-'}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600">{user.department || '-'}</span>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
@@ -1046,6 +1055,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </div>
               </div>
               <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง</label>
+                <input type="text" required value={newPosition} onChange={(e) => setNewPosition(e.target.value)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+              </div>
+              <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก</label>
                 <input type="text" required value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
@@ -1116,6 +1129,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     ))}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง</label>
+                <input type="text" value={editingUser.position} onChange={(e) => setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก</label>
