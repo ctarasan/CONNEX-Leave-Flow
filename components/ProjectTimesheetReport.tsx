@@ -148,6 +148,9 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
             <button onClick={() => setPivotMode('employee')} className={`px-3 py-1 rounded-lg text-xs font-black ${pivotMode === 'employee' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>ตามพนักงาน</button>
           </div>
         </div>
+        <p className={`text-xs font-bold ${pivotMode === 'employee' ? 'text-amber-700' : 'text-gray-400'}`}>
+          หมายเหตุ: แสดงเฉพาะพนักงานที่มีชั่วโมงการทำงาน (มีผลเมื่อเลือกมุมมองตามพนักงาน)
+        </p>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
