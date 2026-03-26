@@ -194,7 +194,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       showAlert('อีเมลนี้มีในระบบแล้ว');
       return;
     }
-    addUser({
+    const created = addUser({
       name,
       email,
       password,
@@ -204,6 +204,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       joinDate: newJoinDate,
       managerId: newManagerId || undefined,
       quotas: {},
+    });
+    // Optimistic UI: show newly added employee immediately.
+    setUsers((prev) => {
+      const idx = prev.findIndex((u) => u.id === created.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = created;
+        return next;
+      }
+      return [...prev, created];
     });
     refreshUsers();
     setShowAddModal(false);
