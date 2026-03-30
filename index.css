@@ -3,3 +3,15 @@
 body {
   font-family: 'Sarabun', sans-serif;
 }
+
+button,
+a,
+[role="button"],
+[role="link"] {
+  cursor: pointer;
+}
+
+.app-busy-click,
+.app-busy-click * {
+  cursor: progress !important;
+}

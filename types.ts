@@ -121,3 +121,44 @@ export interface TimesheetEntry {
   minutes: number;
   updatedAt: string;
 }
+
+export type ExpenseClaimStatus = 'DRAFT' | 'WAITING' | 'APPROVED' | 'PAID' | 'REJECTED';
+
+export interface ExpenseTypeDefinition {
+  id: string;
+  label: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExpenseClaimItem {
+  id: string;
+  expenseDate: string; // YYYY-MM-DD
+  projectId: string;
+  expenseTypeId: string;
+  detail: string;
+  amount: number;
+}
+
+export interface ExpenseClaim {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  approverId?: string;
+  approverName?: string;
+  status: ExpenseClaimStatus;
+  claimDate: string; // YYYY-MM-DD
+  submittedAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  rejectReason?: string;
+  paidDate?: string; // YYYY-MM-DD
+  adminNote?: string;
+  projectSummary?: string;
+  detailSummary?: string;
+  items: ExpenseClaimItem[];
+  totalAmount: number;
+  createdAt: string;
+  updatedAt: string;
+}

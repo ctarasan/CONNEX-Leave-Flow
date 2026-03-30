@@ -3,6 +3,7 @@ import { User, AttendanceRecord } from '../types';
 import { saveAttendance, getAttendanceRecords } from '../store';
 import { useAlert } from '../AlertContext';
 import { isApiMode, getAttendanceVerifyNetwork } from '../api';
+import { todayLocalYmd, formatYmdAsDdMmBe } from '../utils';
 
 interface AttendanceModuleProps {
   user: User;
@@ -116,7 +117,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
                 {currentTime.toLocaleTimeString('th-TH', { hour12: false })}
               </p>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                {currentTime.toLocaleDateString('th-TH', { dateStyle: 'full' })}
+                {formatYmdAsDdMmBe(todayLocalYmd())}
               </p>
             </div>
 

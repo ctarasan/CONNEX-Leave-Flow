@@ -4,6 +4,7 @@ import { User, UserRole } from '../types';
 import { calculateLatePenaltyDays, getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
 import { isApiMode } from '../api';
 import DatePicker from './DatePicker';
+import { formatYmdAsDdMmBe } from '../utils';
 
 interface TeamAttendanceProps {
   manager: User;
@@ -114,7 +115,6 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 value={startDate}
                 onChange={setStartDate}
                 maxDate={endDate || undefined}
-                placeholder="เลือกวันที่เริ่มต้น"
               />
             </div>
             <div className="w-full sm:w-[220px]">
@@ -123,7 +123,6 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 value={endDate}
                 onChange={setEndDate}
                 minDate={startDate || undefined}
-                placeholder="เลือกวันที่สิ้นสุด"
               />
             </div>
           </div>
@@ -173,11 +172,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                     <div className="text-[10px] text-gray-400 font-bold uppercase">{rec.department}</div>
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-700 text-sm">
-                    {new Date(rec.date).toLocaleDateString('th-TH', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {formatYmdAsDdMmBe(rec.date)}
                   </td>
                   <td
                     className={`px-6 py-4 text-center font-black text-sm ${

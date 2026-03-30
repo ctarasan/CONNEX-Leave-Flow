@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { HOLIDAYS_2026 } from '../constants';
+import { formatYmdAsDdMmBe } from '../utils';
 
 interface DatePickerProps {
   value: string;
@@ -8,11 +9,21 @@ interface DatePickerProps {
   minDate?: string;
   maxDate?: string;
   placeholder?: string;
+  /** default = ช่องใหญ่, compact = ตาราง/ตัวกรอง */
+  size?: 'default' | 'compact';
 }
 
 type ViewMode = 'calendar' | 'year' | 'month';
 
-const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, label, minDate, maxDate, placeholder }) => {
+const DatePicker: React.FC<DatePickerProps> = ({
+  value,
+  onChange,
+  label,
+  minDate,
+  maxDate,
+  placeholder = 'วว/ดด/ปปปป',
+  size = 'default',
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => value ? new Date(value) : new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
@@ -240,23 +251,31 @@ const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, label, minDate
     </>
   );
 
+  const boxClass =
+    size === 'compact'
+      ? 'w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg cursor-pointer flex items-center justify-between gap-1 hover:border-blue-400 transition group min-h-[34px]'
+      : 'w-full p-4 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer flex items-center justify-between hover:border-blue-400 transition group';
+  const textClass = size === 'compact' ? 'text-xs font-bold' : 'text-sm font-bold';
+  const iconClass = size === 'compact' ? 'w-4 h-4 flex-shrink-0' : 'w-5 h-5';
+  const panelClass = size === 'compact' ? 'w-64 p-3' : 'w-72 p-5';
+
   return (
     <div className="relative" ref={containerRef}>
       {label ? <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">{label}</label> : null}
       <div
         onClick={() => { setIsOpen(!isOpen); setViewMode('calendar'); }}
-        className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer flex items-center justify-between hover:border-blue-400 transition group"
+        className={boxClass}
       >
-        <span className={`text-sm font-bold ${value ? 'text-gray-900' : 'text-gray-300'}`}>
-          {value ? new Date(value).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : (placeholder || 'เลือกวันที่')}
+        <span className={`${textClass} ${value ? 'text-gray-900' : 'text-gray-400'} truncate`}>
+          {value ? formatYmdAsDdMmBe(value) : placeholder}
         </span>
-        <svg className={`w-5 h-5 transition ${isOpen ? 'text-blue-600' : 'text-gray-400 group-hover:text-blue-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`${iconClass} transition flex-shrink-0 ${isOpen ? 'text-blue-600' : 'text-gray-400 group-hover:text-blue-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-gray-100 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className={`absolute z-[100] mt-2 ${panelClass} bg-white rounded-3xl shadow-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200`}>
           {viewMode === 'year' && renderYearPicker()}
           {viewMode === 'month' && (
             <>

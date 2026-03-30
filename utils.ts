@@ -53,8 +53,56 @@ export const currentCEYear = (): number => new Date().getFullYear();
 /** ปีปัจจุบันในปี พ.ศ. */
 export const currentBEYear = (): number => new Date().getFullYear() + 543;
 
+/** วันนี้ในเครื่องเป็น YYYY-MM-DD (ค.ศ.) — ใช้กับ input ภายใน */
+export const todayLocalYmd = (): string => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * แปลง YYYY-MM-DD (ค.ศ.) เป็น วว/ดด/ปปปป โดยปีเป็น พ.ศ. 4 หลัก
+ * รองรับค่าที่มีต่อท้ายด้วยเวลา (ใช้เฉพาะ 10 ตัวแรก)
+ */
+export const formatYmdAsDdMmBe = (ymd: string): string => {
+  const s = String(ymd ?? '').trim();
+  const head = s.slice(0, 10);
+  const m = head.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s || '-';
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  if (!y || !mo || !d) return '-';
+  return `${String(d).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543}`;
+};
+
 /** เวลาไทย (กรุงเทพ) = UTC+7 */
 const THAILAND_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** วันที่ (ไม่รวมเวลา) ตาม timezone กรุงเทพ เป็น วว/ดด/ปปปป */
+export const formatBangkokDateAsDdMmBe = (isoStr: string | Date): string => {
+  if (isoStr == null || isoStr === '') return '—';
+  const d = typeof isoStr === 'string' ? new Date(isoStr) : isoStr;
+  if (isNaN(d.getTime())) return '—';
+  const bangkok = new Date(d.getTime() + THAILAND_UTC_OFFSET_MS);
+  const y = bangkok.getUTCFullYear();
+  const mo = bangkok.getUTCMonth() + 1;
+  const day = bangkok.getUTCDate();
+  return `${String(day).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543}`;
+};
+
+/** วันที่+เวลา กรุงเทพ เป็น วว/ดด/ปปปป HH:MM น. (ปี พ.ศ.) */
+export const formatBangkokDdMmBeTime = (isoStr: string | Date | null | undefined): string => {
+  if (isoStr == null || isoStr === '') return '—';
+  const d = typeof isoStr === 'string' ? new Date(isoStr) : isoStr;
+  if (isNaN(d.getTime())) return '—';
+  const bangkok = new Date(d.getTime() + THAILAND_UTC_OFFSET_MS);
+  const y = bangkok.getUTCFullYear();
+  const mo = bangkok.getUTCMonth() + 1;
+  const day = bangkok.getUTCDate();
+  const h = bangkok.getUTCHours();
+  const min = bangkok.getUTCMinutes();
+  return `${String(day).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')} น.`;
+};
 
 /**
  * แปลง datetime เป็น "D ม.ค. พ.ศ., HH:MM น." (เวลาไทย UTC+7).

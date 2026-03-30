@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition } from '../types';
+import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition, ExpenseTypeDefinition } from '../types';
 import { AttendanceLatePolicy, getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
+import { formatYmdAsDdMmBe } from '../utils';
+import { deleteExpenseType, getExpenseTypes, postExpenseType } from '../api';
 
 function businessDays(startStr: string, endStr: string, holidays: Record<string, string>): number {
   const start = new Date(startStr);
@@ -35,7 +37,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) => {
   const { showAlert, showConfirm } = useAlert();
-  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'leavetypes' | 'holidays' | 'projects'>('projects');
+  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'leavetypes' | 'holidays' | 'projects' | 'expensetypes'>('projects');
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editPassword, setEditPassword] = useState('');
@@ -72,6 +74,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [taskTypes, setTaskTypes] = useState<TimesheetTaskTypeDefinition[]>([]);
   const [newTaskLabel, setNewTaskLabel] = useState('');
   const [projectTab, setProjectTab] = useState<'project' | 'task'>('project');
+  const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeDefinition[]>([]);
+  const [newExpenseLabel, setNewExpenseLabel] = useState('');
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
   const refreshUsers = () => setUsers(getAllUsers());
@@ -83,6 +87,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setLatePolicy(getAttendanceLatePolicy());
     setTimesheetProjects(getTimesheetProjects());
     setTaskTypes(getTimesheetTaskTypes());
+    getExpenseTypes().then((rows) => {
+      setExpenseTypes(rows.map((x) => ({
+        id: String(x.id ?? ''),
+        label: String(x.label ?? ''),
+        isActive: x.isActive !== false,
+      })));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -93,6 +104,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
 
   const refreshTimesheetProjects = () => setTimesheetProjects(getTimesheetProjects());
   const refreshTaskTypes = () => setTaskTypes(getTimesheetTaskTypes());
+  const refreshExpenseTypes = () => {
+    getExpenseTypes().then((rows) => {
+      setExpenseTypes(rows.map((x) => ({
+        id: String(x.id ?? ''),
+        label: String(x.label ?? ''),
+        isActive: x.isActive !== false,
+      })));
+    }).catch(() => showAlert('ไม่สามารถโหลดประเภทค่าใช้จ่ายได้'));
+  };
   const usersByDepartment = useMemo(() => {
     const map = new Map<string, User[]>();
     for (const u of users) {
@@ -448,6 +468,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'holidays' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
               จัดการวันหยุดบริษัท
+            </button>
+            <button
+              onClick={() => { setActiveSubTab('expensetypes'); refreshExpenseTypes(); }}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'expensetypes' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              ประเภทค่าใช้จ่าย
             </button>
           </>
         )}
@@ -942,6 +968,81 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </div>
           )}
         </div>
+      ) : activeSubTab === 'expensetypes' ? (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
+          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+            <h2 className="text-xl font-bold text-gray-900">จัดการประเภทค่าใช้จ่าย (Admin)</h2>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <input
+              value={newExpenseLabel}
+              onChange={(e) => setNewExpenseLabel(e.target.value)}
+              placeholder="เช่น ค่าเดินทาง / ค่าเครื่องเขียน / ค่า Messenger"
+              className="flex-1 min-w-[240px] px-3 py-2 border rounded-xl text-sm font-bold"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const label = newExpenseLabel.trim();
+                if (!label) return;
+                postExpenseType({ label, isActive: true })
+                  .then(() => {
+                    setNewExpenseLabel('');
+                    refreshExpenseTypes();
+                    showAlert('เพิ่มประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
+                  })
+                  .catch((err) => showAlert(err instanceof Error ? err.message : 'เพิ่มประเภทค่าใช้จ่ายไม่สำเร็จ'));
+              }}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black"
+            >
+              เพิ่มประเภท
+            </button>
+          </div>
+          <div className="space-y-2">
+            {expenseTypes.map((t) => (
+              <div key={t.id} className="flex items-center justify-between border rounded-xl px-3 py-2">
+                <span className={`text-sm font-bold ${t.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{t.label}</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = window.prompt('แก้ไขชื่อประเภทค่าใช้จ่าย', t.label);
+                      if (!updated || !updated.trim()) return;
+                      postExpenseType({ id: t.id, label: updated.trim(), isActive: true })
+                        .then(() => {
+                          refreshExpenseTypes();
+                          showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว');
+                        })
+                        .catch((err) => showAlert(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ'));
+                    }}
+                    className="text-xs font-black text-blue-600"
+                  >
+                    แก้ไข
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      showConfirm(`ต้องการปิดใช้ประเภท "${t.label}" หรือไม่?`, () => {
+                        deleteExpenseType(t.id)
+                          .then(() => {
+                            refreshExpenseTypes();
+                            showAlert('ปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
+                          })
+                          .catch((err) => showAlert(err instanceof Error ? err.message : 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ'));
+                      });
+                    }}
+                    className="text-xs font-black text-rose-600"
+                  >
+                    ลบ
+                  </button>
+                </div>
+              </div>
+            ))}
+            {expenseTypes.length === 0 && (
+              <div className="text-sm text-gray-400 italic py-6 text-center">ยังไม่มีประเภทค่าใช้จ่าย</div>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -991,7 +1092,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   {sortedHolidayDates.map(date => (
                     <tr key={date} className="hover:bg-gray-50 transition">
                       <td className="px-6 py-4 font-bold text-gray-700">
-                        {new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {formatYmdAsDdMmBe(date)}
                       </td>
                       <td className="px-6 py-4 font-bold text-gray-900">{holidays[date]}</td>
                       <td className="px-6 py-4 text-right">
@@ -1064,7 +1165,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันเริ่มงาน</label>
-                <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" placeholder="เลือกวันที่" />
+                <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>
@@ -1140,7 +1241,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันเริ่มงาน</label>
-                <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" placeholder="เลือกวันที่" />
+                <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>

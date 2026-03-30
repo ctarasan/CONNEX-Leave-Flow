@@ -13,9 +13,10 @@ import TeamAttendance from './components/TeamAttendance';
 import VacationLedger from './components/VacationLedger';
 import TimesheetModule from './components/TimesheetModule';
 import ProjectTimesheetReport from './components/ProjectTimesheetReport';
+import ExpenseModule from './components/ExpenseModule';
 import Login from './components/Login';
 import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from './constants';
-import { formatThaiDate } from './utils';
+import { todayLocalYmd, formatYmdAsDdMmBe, formatBangkokDateAsDdMmBe } from './utils';
 import { useAlert } from './AlertContext';
 
 /** ประเภทวันลาที่แสดงบนแดชบอร์ดโดย default: ลาป่วย ลาพักร้อน ลากิจ */
@@ -28,7 +29,7 @@ const App: React.FC = () => {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'report' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'expense' | 'report' | 'admin'>('dashboard');
   const [attendanceSubTab, setAttendanceSubTab] = useState<'attendance' | 'timesheet'>('attendance');
   const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation'>('leave');
   const [reportSubTab, setReportSubTab] = useState<'leave' | 'team' | 'project'>('leave');
@@ -492,6 +493,13 @@ const App: React.FC = () => {
               <NavIcon variant="history" active={activeTab === 'history'} />
               ประวัติรายการ
             </button>
+            <button
+              onClick={() => setActiveTab('expense')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'expense' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              <NavIcon variant="chart" active={activeTab === 'expense'} />
+              เบิกค่าใช้จ่าย
+            </button>
             {isManagerOrAdmin && (
               <button 
                 onClick={() => setActiveTab('report')}
@@ -557,6 +565,7 @@ const App: React.FC = () => {
               {activeTab === 'dashboard' && 'แดชบอร์ด'}
               {activeTab === 'attendance' && 'ลงเวลาทำงาน'}
               {activeTab === 'history' && 'ประวัติรายการ'}
+              {activeTab === 'expense' && 'เบิกค่าใช้จ่ายทั่วไป'}
               {activeTab === 'report' && (reportSubTab === 'leave' ? 'รายงานการลา' : reportSubTab === 'team' ? 'รายงานการเข้างานของทีม' : 'รายงานสรุปข้อมูลโครงการฯ')}
               {activeTab === 'admin' && 'จัดการระบบ'}
             </h2>
@@ -564,7 +573,7 @@ const App: React.FC = () => {
           </div>
           <div className="text-right hidden sm:block">
             <p className="text-xs font-bold text-gray-400 uppercase">วันนี้</p>
-            <p className="text-sm font-black text-gray-800">{new Date().toLocaleDateString('th-TH', { dateStyle: 'long' })}</p>
+            <p className="text-sm font-black text-gray-800">{formatYmdAsDdMmBe(todayLocalYmd())}</p>
           </div>
         </header>
 
@@ -732,7 +741,7 @@ const App: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right text-[10px] font-bold text-gray-400">
-                            {new Date(req.submittedAt).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatBangkokDateAsDdMmBe(req.submittedAt)}
                           </td>
                         </tr>
                       ))}
@@ -760,7 +769,7 @@ const App: React.FC = () => {
                         <tr key={rec.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4">
                             <p className="text-sm font-black text-gray-900">
-                              {new Date(rec.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                              {formatYmdAsDdMmBe(rec.date)}
                             </p>
                           </td>
                           <td className={`px-6 py-4 text-center font-black text-sm ${rec.isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
@@ -822,6 +831,7 @@ const App: React.FC = () => {
             {reportSubTab === 'project' && <ProjectTimesheetReport currentUser={currentUser} />}
           </div>
         )}
+        {activeTab === 'expense' && <ExpenseModule currentUser={currentUser} />}
         {activeTab === 'admin' && <AdminPanel currentUser={currentUser} onUserDeleted={(id) => { if (currentUser?.id === id) handleLogout(); }} />}
       </main>
       </div>

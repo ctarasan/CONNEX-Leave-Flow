@@ -7,7 +7,9 @@ export const APP_VERSION = '3.0.0';
 export const APP_LAST_UPDATED = '26 มี.ค. 2569, 16:29 น.';
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
-export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}`;
+const ENV_LABEL = String(import.meta.env.VITE_ENV_LABEL ?? '').trim();
+const ENV_SUFFIX = ENV_LABEL ? ` ( ${ENV_LABEL} )` : '';
+export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}${ENV_SUFFIX}`;
 
 /** ป้ายชื่อประเภทวันลาอยู่ที่ store (getLeaveTypes) แล้ว ไม่ใช้ค่านี้สำหรับประเภทแบบเดิม */
 export const STATUS_LABELS: Record<LeaveStatus, string> = {

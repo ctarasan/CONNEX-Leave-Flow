@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { User, LeaveRequest, AttendanceRecord, LeaveStatus } from '../types';
 import { calculateLatePenaltyDays, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
 import { HOLIDAYS_2026 } from '../constants';
-import { formatThaiDate } from '../utils';
+import { formatThaiDate, formatYmdAsDdMmBe } from '../utils';
 
 interface VacationLedgerProps {
   user: User;
@@ -113,7 +113,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
               {ledgerEntries.map(entry => (
                 <tr key={entry.id} className="hover:bg-gray-50 transition">
                   <td className="px-6 py-4 font-bold text-gray-700 text-sm">
-                    {new Date(entry.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {formatYmdAsDdMmBe(entry.date)}
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-sm font-black text-gray-900">{entry.description}</p>

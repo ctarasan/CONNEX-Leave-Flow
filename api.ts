@@ -7,7 +7,7 @@ const BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
 
 function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-    ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '')
+    ? String(import.meta.env.VITE_API_URL).trim().replace(/\/$/, '')
     : '';
   if (typeof window !== 'undefined' && window.location?.hostname === 'connex-leave-flow.vercel.app') {
     const origin = window.location.origin.replace(/\/$/, '');
@@ -389,4 +389,108 @@ export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<R
     throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
   }
   return res.json();
+}
+
+export async function getExpenseTypes(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postExpenseType(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function deleteExpenseType(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+}
+
+export async function getExpenseClaims(params?: { from?: string; to?: string; scope?: 'mine' | 'subordinates' | 'all' }): Promise<Record<string, unknown>[]> {
+  const q = new URLSearchParams();
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  if (params?.scope) q.set('scope', params.scope);
+  const query = q.toString();
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims${query ? `?${query}` : ''}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายการเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getExpenseClaimById(id: string): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายละเอียดใบเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postExpenseClaim(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกใบเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function approveExpenseClaim(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'อนุมัติใบเบิกไม่สำเร็จ');
+  }
+}
+
+export async function setExpenseClaimPayDate(id: string, paidDate: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/pay-date`, {
+    method: 'POST',
+    body: JSON.stringify({ paidDate }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'กำหนดวันทำจ่ายไม่สำเร็จ');
+  }
+}
+
+export async function rejectExpenseClaim(id: string, reason: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ไม่สามารถ Reject ใบเบิกได้');
+  }
+}
+
+export async function submitExpenseClaim(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/submit`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ไม่สามารถ Submit ใบเบิกได้');
+  }
 }

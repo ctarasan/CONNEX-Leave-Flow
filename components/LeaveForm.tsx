@@ -195,7 +195,6 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
             onChange={setStartDate}
             minDate={isSickLeave ? undefined : todayStr}
             maxDate={isSickLeave ? todayStr : undefined}
-            placeholder="เลือกวันที่เริ่มลา"
           />
           <DatePicker
             label="ถึงวันที่"
@@ -203,7 +202,6 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
             onChange={setEndDate}
             minDate={startDate || (isSickLeave ? undefined : todayStr)}
             maxDate={isSickLeave ? todayStr : undefined}
-            placeholder="เลือกวันที่สิ้นสุด"
           />
         </div>
 

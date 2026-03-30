@@ -11,6 +11,8 @@ import {
   saveTimesheetEntry,
 } from '../store';
 import { useAlert } from '../AlertContext';
+import DatePicker from './DatePicker';
+import { formatYmdAsDdMmBe } from '../utils';
 
 interface TimesheetModuleProps {
   currentUser: User;
@@ -159,9 +161,11 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">
         <h3 className="text-lg font-black text-gray-900">Timesheet Calendar</h3>
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <input type="date" max={todayIso} value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold" />
+          <div className="min-w-[140px] max-w-[200px]">
+            <DatePicker label="" value={selectedDate} onChange={setSelectedDate} maxDate={todayIso} size="compact" />
+          </div>
           <p className="text-sm font-bold text-gray-600">
-            วันที่เลือก: {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })}
+            วันที่เลือก: {formatYmdAsDdMmBe(selectedDate)}
           </p>
         </div>
 

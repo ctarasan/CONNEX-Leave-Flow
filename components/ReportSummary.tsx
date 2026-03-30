@@ -287,11 +287,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
       return { days: [], label: '' };
     }
 
-    const firstOfMonth = new Date(year, month - 1, 1);
-    const monthLabel = firstOfMonth.toLocaleDateString('th-TH', {
-      month: 'long',
-      year: 'numeric',
-    });
+    const monthLabel = formatThaiMonthYear(`${year}-${String(month).padStart(2, '0')}`);
 
     // Map วันที่ -> รายการลาที่ครอบคลุมวันนั้น (ใช้ local date เพื่อแก้ปัญหา timezone)
     const leaveByDate: Record<string, { userName: string; type: string }[]> = {};
