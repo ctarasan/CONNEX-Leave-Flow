@@ -4,7 +4,7 @@ import { AttendanceRecord, LeaveRequest, User, UserRole } from '../types';
 import { HOLIDAYS_2026 } from '../constants';
 import { getAllUsers, getLeaveTypes, getSubordinateIdSetRecursive, getLeaveRequests, getSubordinateIdsRecursive, loadLeaveRequestsForManager, getAttendanceRecords, loadAttendanceForUser, getLateThresholdTime } from '../store';
 import { isApiMode } from '../api';
-import { formatThaiDate, formatThaiMonthYear, toBuddhistYear, THAI_MONTHS_FULL, currentCEYear } from '../utils';
+import { formatThaiMonthYear, formatYmdAsDdMmBe, toBuddhistYear, THAI_MONTHS_FULL, currentCEYear } from '../utils';
 
 interface ReportSummaryProps {
   requests: LeaveRequest[];
@@ -728,7 +728,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-[10px] font-bold text-gray-700">
-                        {formatThaiDate(r.startDate)} ถึง {formatThaiDate(r.endDate)}
+                        {formatYmdAsDdMmBe(r.startDate)} ถึง {formatYmdAsDdMmBe(r.endDate)}
                       </p>
                       <p className="text-[10px] font-bold text-blue-600 mt-0.5">
                         {formatDurationLabel(days)}

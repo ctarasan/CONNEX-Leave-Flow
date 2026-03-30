@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { User, LeaveRequest, AttendanceRecord, LeaveStatus } from '../types';
 import { calculateLatePenaltyDays, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
 import { HOLIDAYS_2026 } from '../constants';
-import { formatThaiDate, formatYmdAsDdMmBe } from '../utils';
+import { formatYmdAsDdMmBe } from '../utils';
 
 interface VacationLedgerProps {
   user: User;
@@ -58,7 +58,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
         id: r.id,
         date: r.startDate,
         type: 'LEAVE' as const,
-        description: `ลาพักร้อน (${formatThaiDate(r.startDate)} ถึง ${formatThaiDate(r.endDate)})`,
+        description: `ลาพักร้อน (${formatYmdAsDdMmBe(r.startDate)} ถึง ${formatYmdAsDdMmBe(r.endDate)})`,
         amount: calculateBusinessDays(r.startDate, r.endDate),
         timestamp: r.reviewedAt || r.submittedAt
       })),

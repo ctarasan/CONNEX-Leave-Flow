@@ -640,7 +640,7 @@ const App: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-gray-900">{leaveTypeLabelMap[req.type] ?? req.type}</p>
-                          <p className="text-[10px] text-gray-500 font-bold">{formatThaiDate(req.startDate)} ถึง {formatThaiDate(req.endDate)}</p>
+                          <p className="text-[10px] text-gray-500 font-bold">{formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}</p>
                         </div>
                       </div>
                       <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${STATUS_COLORS[req.status]}`}>
@@ -724,7 +724,7 @@ const App: React.FC = () => {
                         <tr key={req.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4">
                             <p className="text-sm font-black text-gray-900">{leaveTypeLabelMap[req.type] ?? req.type}</p>
-                            <p className="text-[10px] text-gray-500 font-bold">{formatThaiDate(req.startDate)} ถึง {formatThaiDate(req.endDate)}</p>
+                            <p className="text-[10px] text-gray-500 font-bold">{formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}</p>
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-xs text-gray-700 font-medium truncate max-w-xs">{req.reason}</p>
