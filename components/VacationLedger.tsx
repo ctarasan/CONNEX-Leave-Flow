@@ -1,8 +1,7 @@
 
 import React, { useMemo } from 'react';
-import { User, LeaveRequest, AttendanceRecord, LeaveStatus } from '../types';
-import { calculateLatePenaltyDays, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
-import { HOLIDAYS_2026 } from '../constants';
+import { User, LeaveStatus } from '../types';
+import { calculateLatePenaltyDays, getAllUsers, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes, getHolidays } from '../store';
 import { formatYmdAsDdMmBe } from '../utils';
 import TablePagination, { useTablePagination } from './TablePagination';
 
@@ -26,8 +25,11 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
     .sort((a, b) => a.after.localeCompare(b.after))
     .map((t, i) => `${i + 1}) หลัง ${t.after.slice(0, 5)} หัก ${t.penalty} วัน`)
     .join(' / ');
-  // ฟังก์ชันคำนวณวันทำการ (เหมือนใน LeaveForm)
+  const liveUser = getAllUsers().find((u) => u.id === user.id) ?? user;
+
+  // ฟังก์ชันคำนวณวันทำการ (ให้ตรงกับหน้า Admin)
   const calculateBusinessDays = (startStr: string, endStr: string) => {
+    const holidayMap = getHolidays();
     const start = new Date(startStr);
     const end = new Date(endStr);
     let count = 0;
@@ -35,7 +37,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
     while (curDate <= end) {
       const dayOfWeek = curDate.getDay();
       const isoDate = curDate.toISOString().split('T')[0];
-      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !HOLIDAYS_2026[isoDate]) count++;
+      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayMap[isoDate]) count++;
       curDate.setDate(curDate.getDate() + 1);
     }
     return count;
@@ -44,13 +46,13 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
   const ledgerEntries = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const requests = getLeaveRequests().filter(r =>
-      r.userId === user.id &&
+      r.userId === liveUser.id &&
       r.type === 'VACATION' &&
       r.status === LeaveStatus.APPROVED &&
       new Date(r.startDate).getFullYear() === currentYear
     );
 
-    const attendance = getAttendanceRecords(user.id).filter(a =>
+    const attendance = getAttendanceRecords(liveUser.id).filter(a =>
       a.isLate && a.penaltyApplied && new Date(a.date).getFullYear() === currentYear
     );
 
@@ -74,9 +76,21 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
     ];
 
     return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  }, [user.id]);
+  }, [liveUser.id]);
 
-  const totalDeducted = useMemo(() => ledgerEntries.reduce((sum, e) => sum + e.amount, 0), [ledgerEntries]);
+  const leaveUsedForBalance = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const requests = getLeaveRequests().filter((r) =>
+      r.userId === liveUser.id &&
+      r.type === 'VACATION' &&
+      r.status === LeaveStatus.APPROVED &&
+      new Date(r.startDate).getFullYear() === currentYear
+    );
+    return requests.reduce((sum, r) => sum + calculateBusinessDays(r.startDate, r.endDate), 0);
+  }, [liveUser.id]);
+  const defaultVacation = getLeaveTypes().find((t) => t.id === 'VACATION')?.defaultQuota ?? 0;
+  const quotaStartAfterLate = Number(liveUser.quotas['VACATION'] ?? defaultVacation) || 0;
+  const remainingVacation = quotaStartAfterLate - leaveUsedForBalance;
   const ledgerPagination = useTablePagination(ledgerEntries);
 
   return (
@@ -85,15 +99,15 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">สิทธิพักร้อนทั้งหมด (ปีนี้)</p>
-          <p className="text-2xl font-black text-gray-900">12.00 <span className="text-sm font-bold text-gray-400">วัน</span></p>
+          <p className="text-2xl font-black text-gray-900">{quotaStartAfterLate.toFixed(2)} <span className="text-sm font-bold text-gray-400">วัน</span></p>
         </div>
         <div className="bg-rose-50 p-6 rounded-[32px] border border-rose-100 shadow-sm">
           <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1">ใช้ไปแล้วรวม</p>
-          <p className="text-2xl font-black text-rose-600">-{totalDeducted.toFixed(2)} <span className="text-sm font-bold text-rose-400">วัน</span></p>
+          <p className="text-2xl font-black text-rose-600">-{leaveUsedForBalance.toFixed(2)} <span className="text-sm font-bold text-rose-400">วัน</span></p>
         </div>
         <div className="bg-blue-600 p-6 rounded-[32px] text-white shadow-xl shadow-blue-100">
           <p className="text-[10px] font-black text-blue-100 uppercase tracking-widest mb-1">คงเหลือปัจจุบัน</p>
-          <p className="text-2xl font-black">{(12 - totalDeducted).toFixed(2)} <span className="text-sm font-bold text-blue-200">วัน</span></p>
+          <p className="text-2xl font-black">{remainingVacation.toFixed(2)} <span className="text-sm font-bold text-blue-200">วัน</span></p>
         </div>
       </div>
 

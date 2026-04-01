@@ -814,7 +814,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   const vacationUsedByUser: Record<string, number> = {};
                   users.forEach(u => { vacationUsedByUser[u.id] = 0; });
                   requests.forEach(req => {
-                    if (req.type !== 'VACATION' || req.status === LeaveStatus.REJECTED) return;
+                    if (req.type !== 'VACATION' || req.status !== LeaveStatus.APPROVED) return;
                     const start = new Date(req.startDate);
                     if (start.getFullYear() !== currentYear) return;
                     vacationUsedByUser[req.userId] = (vacationUsedByUser[req.userId] ?? 0) + businessDays(req.startDate, req.endDate, holidayMap);
