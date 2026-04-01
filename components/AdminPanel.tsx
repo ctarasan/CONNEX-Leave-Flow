@@ -273,8 +273,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         setEditingUser(null);
         setEditPassword('');
         showAlert('บันทึกข้อมูลพนักงานเรียบร้อยแล้ว');
-      } catch {
-        showAlert('ไม่สามารถอัปเดตข้อมูลได้ กรุณาลองใหม่');
+      } catch (err) {
+        const msg = err instanceof Error && err.message ? err.message : 'ไม่สามารถอัปเดตข้อมูลได้ กรุณาลองใหม่';
+        showAlert(msg);
       }
     });
   };
