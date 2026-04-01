@@ -183,10 +183,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setEditPassword('');
   };
 
+  const normalizeJoinDateForCalc = (joinDateRaw: string): string | null => {
+    const raw = String(joinDateRaw || '').trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slash) {
+      const dd = Number(slash[1]);
+      const mm = Number(slash[2]);
+      let yy = Number(slash[3]);
+      if (yy >= 2400) yy -= 543;
+      if (yy < 1900 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+      return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    }
+    return null;
+  };
+
   const computeVacationQuotaStartAfterLate = (user: User, processYear: number): number => {
     const jan1 = new Date(processYear, 0, 1, 12, 0, 0);
     const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
-    const join = new Date(`${String(user.joinDate).slice(0, 10)}T12:00:00`);
+    const normalizedJoinDate = normalizeJoinDateForCalc(user.joinDate);
+    if (!normalizedJoinDate) {
+      const fallback = Number(user.quotas['VACATION'] ?? 0);
+      return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
+    }
+    const join = new Date(`${normalizedJoinDate}T12:00:00`);
     const firstAnniv = new Date(join);
     firstAnniv.setFullYear(firstAnniv.getFullYear() + 1);
 
@@ -405,13 +426,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: quota_start_after_late = quota_${processYear} - late_penalty`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
+          const sourceUsers = getAllUsers();
           if (isApiMode()) {
-            await Promise.all(users.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
+            await Promise.all(sourceUsers.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
           }
 
           const updatedUsers: User[] = [];
 
-          for (const user of users) {
+          for (const user of sourceUsers) {
             const nextUser: User = {
               ...user,
               quotas: {
@@ -426,7 +448,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             updatedUsers.push(nextUser);
           }
 
-          setUsers(updatedUsers);
+          const latestUsers = getAllUsers();
+          setUsers(latestUsers.length > 0 ? latestUsers : updatedUsers);
           refreshUsers();
           showAlert(`ประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} เรียบร้อยแล้ว (${updatedUsers.length} คน)`);
         });

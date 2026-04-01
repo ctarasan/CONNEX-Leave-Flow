@@ -248,12 +248,27 @@ export function saveAttendanceLatePolicy(policy: AttendanceLatePolicy): void {
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE_LATE_POLICY, JSON.stringify(normalized));
 }
 
+function toTimeSeconds(raw?: string): number | null {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  const m = text.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  const ss = Number(m[3] ?? '0');
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) return null;
+  return (hh * 3600) + (mm * 60) + ss;
+}
+
 export function calculateLatePenaltyDays(checkIn?: string): number {
   const policy = getAttendanceLatePolicy();
-  if (!checkIn) return 0;
+  const checkInSec = toTimeSeconds(checkIn);
+  if (checkInSec == null) return 0;
   let penalty = 0;
   for (const tier of policy.tiers) {
-    if (checkIn > tier.after) penalty = tier.penalty;
+    const tierSec = toTimeSeconds(tier.after);
+    if (tierSec != null && checkInSec > tierSec) penalty = tier.penalty;
   }
   return penalty;
 }
@@ -536,13 +551,14 @@ export async function loadFromApi(): Promise<void> {
 
 export async function loadAttendanceForUser(userId: string): Promise<void> {
   if (!isApiMode()) return;
-  const prev = _attendanceCache.get(userId) ?? [];
+  const uid = normalizeUserId(userId);
+  const prev = _attendanceCache.get(uid) ?? [];
   try {
-    const res = await api.getAttendance(userId);
-    _attendanceCache.set(userId, (res as Record<string, unknown>[]).map(normalizeAttendance));
+    const res = await api.getAttendance(uid);
+    _attendanceCache.set(uid, (res as Record<string, unknown>[]).map(normalizeAttendance));
   } catch {
     // Keep last known data to avoid random row count drops on transient API errors.
-    _attendanceCache.set(userId, prev);
+    _attendanceCache.set(uid, prev);
   }
 }
 
@@ -919,7 +935,7 @@ export const resetAllData = () => {
 
 // Attendance
 export const getAttendanceRecords = (userId?: string): AttendanceRecord[] => {
-  if (isApiMode() && userId) return _attendanceCache.get(userId) ?? [];
+  if (isApiMode() && userId) return _attendanceCache.get(normalizeUserId(userId)) ?? [];
   const stored = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
   const parsed = safeJsonParse<AttendanceRecord[]>(stored, []);
   const records = Array.isArray(parsed) ? parsed : [];
