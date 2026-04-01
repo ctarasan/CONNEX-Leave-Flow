@@ -811,17 +811,20 @@ function generateNextUserId(users: User[]): string {
   return String(next).padStart(3, '0');
 }
 
-export const addUser = (data: Omit<User, 'id'>): User => {
+export const addUser = (data: Omit<User, 'id'>): User | Promise<User> => {
   const users = getAllUsers();
   const id = generateNextUserId(users);
   const quotas = data.quotas && Object.keys(data.quotas).length > 0 ? data.quotas : buildQuotasFromLeaveTypes(data.gender);
   const newUser: User = { ...data, id, quotas };
   if (isApiMode()) {
     const body = { id, ...newUser, password: (data as User).password || 'changeme', joinDate: newUser.joinDate };
-    api.postUser(body as unknown as Record<string, unknown>).then(() => api.getUsers()).then((res) => {
-      setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
-    }).catch(() => {});
-    return newUser;
+    return api.postUser(body as unknown as Record<string, unknown>)
+      .then(() => api.getUsers())
+      .then((res) => {
+        const normalized = (res as Record<string, unknown>[]).map(normalizeUser);
+        setUsersCache(normalized);
+        return normalized.find((u) => u.id === id) ?? newUser;
+      });
   }
   const updated = [...users, newUser];
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));

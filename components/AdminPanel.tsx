@@ -183,10 +183,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setEditPassword('');
   };
 
+  const computeVacationQuotaStartAfterLate = (user: User, processYear: number): number => {
+    const jan1 = new Date(processYear, 0, 1, 12, 0, 0);
+    const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
+    const join = new Date(`${String(user.joinDate).slice(0, 10)}T12:00:00`);
+    const firstAnniv = new Date(join);
+    firstAnniv.setFullYear(firstAnniv.getFullYear() + 1);
+
+    let quotaYear = 0;
+    if (firstAnniv <= jan1) quotaYear = 12;
+    else if (firstAnniv > dec31) quotaYear = 0;
+    else quotaYear = 13 - (firstAnniv.getMonth() + 1);
+
+    const latePenalty = getAttendanceRecords(user.id)
+      .filter((r) => String(r.date || '').startsWith(`${processYear}-`) && !!r.checkIn)
+      .reduce((sum, r) => sum + calculateLatePenaltyDays(r.checkIn), 0);
+
+    return Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
+  };
+
+  const withRecomputedVacationQuota = async (user: User): Promise<User> => {
+    const processYear = new Date().getFullYear();
+    if (isApiMode() && user.id) {
+      await loadAttendanceForUser(user.id).catch(() => {});
+    }
+    return {
+      ...user,
+      quotas: {
+        ...user.quotas,
+        VACATION: computeVacationQuotaStartAfterLate(user, processYear),
+      },
+    };
+  };
+
   const handleSave = () => {
     if (!editingUser) return;
     runAction('admin-save-user', async () => {
-      const toSave: User = {
+      const toSaveBase: User = {
         ...editingUser,
         name: editingUser.name.trim(),
         email: editingUser.email.trim(),
@@ -195,10 +228,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         password: editPassword.trim() || editingUser.password,
       };
       try {
+        const toSave = await withRecomputedVacationQuota(toSaveBase);
         const result = updateUser(toSave);
         if (result != null && typeof (result as Promise<void>).then === 'function') {
           await (result as Promise<void>);
         }
+        const latestUsers = getAllUsers();
+        setUsers(latestUsers);
         refreshUsers();
         setEditingUser(null);
         setEditPassword('');
@@ -241,16 +277,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         ? await (createdMaybe as Promise<User>)
         : createdMaybe as User;
       if (created?.id) {
+        const createdWithQuota = await withRecomputedVacationQuota(created);
+        const saveCreatedResult = updateUser(createdWithQuota);
+        if (saveCreatedResult && typeof (saveCreatedResult as Promise<void>).then === 'function') {
+          await (saveCreatedResult as Promise<void>);
+        }
         setUsers((prev) => {
-          const idx = prev.findIndex((u) => u.id === created.id);
+          const idx = prev.findIndex((u) => u.id === createdWithQuota.id);
           if (idx >= 0) {
             const next = [...prev];
-            next[idx] = created;
+            next[idx] = createdWithQuota;
             return next;
           }
-          return [...prev, created];
+          return [...prev, createdWithQuota];
         });
       }
+      const latestUsers = getAllUsers();
+      setUsers(latestUsers);
       refreshUsers();
       setShowAddModal(false);
       setNewName('');
@@ -366,30 +409,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             await Promise.all(users.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
           }
 
-          const jan1 = new Date(processYear, 0, 1, 12, 0, 0);
-          const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
           const updatedUsers: User[] = [];
 
           for (const user of users) {
-            const join = new Date(`${String(user.joinDate).slice(0, 10)}T12:00:00`);
-            const firstAnniv = new Date(join);
-            firstAnniv.setFullYear(firstAnniv.getFullYear() + 1);
-
-            let quotaYear = 0;
-            if (firstAnniv <= jan1) quotaYear = 12;
-            else if (firstAnniv > dec31) quotaYear = 0;
-            else quotaYear = 13 - (firstAnniv.getMonth() + 1);
-
-            const latePenalty = getAttendanceRecords(user.id)
-              .filter((r) => String(r.date || '').startsWith(`${processYear}-`) && !!r.checkIn)
-              .reduce((sum, r) => sum + calculateLatePenaltyDays(r.checkIn), 0);
-
-            const quotaStartAfterLate = Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
             const nextUser: User = {
               ...user,
               quotas: {
                 ...user.quotas,
-                VACATION: quotaStartAfterLate,
+                VACATION: computeVacationQuotaStartAfterLate(user, processYear),
               },
             };
             const result = updateUser(nextUser);
