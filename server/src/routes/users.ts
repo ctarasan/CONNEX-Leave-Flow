@@ -7,6 +7,13 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 
 const defaultQuotas = () => ({ sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0 });
+const getQuotaValue = (quotas: unknown, key: string): number => {
+  if (!quotas || typeof quotas !== 'object') return 0;
+  const q = quotas as Record<string, unknown>;
+  const raw = q[key] ?? q[key.toUpperCase()] ?? q[key.toLowerCase()];
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
+};
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
@@ -97,15 +104,14 @@ router.post('/', requireAuth, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     
     // Extract quotas
-    const q = quotas && typeof quotas === 'object' ? quotas : {};
-    const sickQuota = q.sick || 0;
-    const personalQuota = q.personal || 0;
-    const vacationQuota = q.vacation || 0;
-    const ordinationQuota = q.ordination || 0;
-    const militaryQuota = q.military || 0;
-    const maternityQuota = q.maternity || 0;
-    const sterilizationQuota = q.sterilization || 0;
-    const paternityQuota = q.paternity || 0;
+    const sickQuota = getQuotaValue(quotas, 'sick');
+    const personalQuota = getQuotaValue(quotas, 'personal');
+    const vacationQuota = getQuotaValue(quotas, 'vacation');
+    const ordinationQuota = getQuotaValue(quotas, 'ordination');
+    const militaryQuota = getQuotaValue(quotas, 'military');
+    const maternityQuota = getQuotaValue(quotas, 'maternity');
+    const sterilizationQuota = getQuotaValue(quotas, 'sterilization');
+    const paternityQuota = getQuotaValue(quotas, 'paternity');
     
     await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
@@ -151,14 +157,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (joinDate !== undefined) { updates.push(`join_date = $${i++}`); values.push(joinDate); }
     if (managerId !== undefined) { updates.push(`manager_id = $${i++}`); values.push(managerId || null); }
     if (quotas !== undefined && typeof quotas === 'object') {
-      if (quotas.sick !== undefined) { updates.push(`sick_quota = $${i++}`); values.push(quotas.sick); }
-      if (quotas.personal !== undefined) { updates.push(`personal_quota = $${i++}`); values.push(quotas.personal); }
-      if (quotas.vacation !== undefined) { updates.push(`vacation_quota = $${i++}`); values.push(quotas.vacation); }
-      if (quotas.ordination !== undefined) { updates.push(`ordination_quota = $${i++}`); values.push(quotas.ordination); }
-      if (quotas.military !== undefined) { updates.push(`military_quota = $${i++}`); values.push(quotas.military); }
-      if (quotas.maternity !== undefined) { updates.push(`maternity_quota = $${i++}`); values.push(quotas.maternity); }
-      if (quotas.sterilization !== undefined) { updates.push(`sterilization_quota = $${i++}`); values.push(quotas.sterilization); }
-      if (quotas.paternity !== undefined) { updates.push(`paternity_quota = $${i++}`); values.push(quotas.paternity); }
+      const qObj = quotas as Record<string, unknown>;
+      if (qObj.sick !== undefined || qObj.SICK !== undefined) { updates.push(`sick_quota = $${i++}`); values.push(getQuotaValue(quotas, 'sick')); }
+      if (qObj.personal !== undefined || qObj.PERSONAL !== undefined) { updates.push(`personal_quota = $${i++}`); values.push(getQuotaValue(quotas, 'personal')); }
+      if (qObj.vacation !== undefined || qObj.VACATION !== undefined) { updates.push(`vacation_quota = $${i++}`); values.push(getQuotaValue(quotas, 'vacation')); }
+      if (qObj.ordination !== undefined || qObj.ORDINATION !== undefined) { updates.push(`ordination_quota = $${i++}`); values.push(getQuotaValue(quotas, 'ordination')); }
+      if (qObj.military !== undefined || qObj.MILITARY !== undefined) { updates.push(`military_quota = $${i++}`); values.push(getQuotaValue(quotas, 'military')); }
+      if (qObj.maternity !== undefined || qObj.MATERNITY !== undefined) { updates.push(`maternity_quota = $${i++}`); values.push(getQuotaValue(quotas, 'maternity')); }
+      if (qObj.sterilization !== undefined || qObj.STERILIZATION !== undefined) { updates.push(`sterilization_quota = $${i++}`); values.push(getQuotaValue(quotas, 'sterilization')); }
+      if (qObj.paternity !== undefined || qObj.PATERNITY !== undefined) { updates.push(`paternity_quota = $${i++}`); values.push(getQuotaValue(quotas, 'paternity')); }
     }
     if (isSuspended !== undefined) {
       const suspended = isSuspended === true;
