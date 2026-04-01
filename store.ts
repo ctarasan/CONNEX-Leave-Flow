@@ -773,7 +773,20 @@ export const getAllUsers = (): User[] => {
 
 export const updateUser = (updatedUser: User): void | Promise<void> => {
   if (isApiMode()) {
-    const body = { ...updatedUser } as Record<string, unknown>;
+    const toApiQuotas = (raw: unknown): Record<string, number> => {
+      if (!raw || typeof raw !== 'object') return {};
+      const src = raw as Record<string, unknown>;
+      const out: Record<string, number> = {};
+      for (const [key, value] of Object.entries(src)) {
+        const n = Number(value);
+        out[key.toLowerCase()] = Number.isFinite(n) ? n : 0;
+      }
+      return out;
+    };
+    const body = {
+      ...updatedUser,
+      quotas: toApiQuotas(updatedUser.quotas),
+    } as Record<string, unknown>;
     if (body.password === '') delete body.password;
 
     // Optimistic update: reflect changes immediately in cache
@@ -817,7 +830,23 @@ export const addUser = (data: Omit<User, 'id'>): User | Promise<User> => {
   const quotas = data.quotas && Object.keys(data.quotas).length > 0 ? data.quotas : buildQuotasFromLeaveTypes(data.gender);
   const newUser: User = { ...data, id, quotas };
   if (isApiMode()) {
-    const body = { id, ...newUser, password: (data as User).password || 'changeme', joinDate: newUser.joinDate };
+    const toApiQuotas = (raw: unknown): Record<string, number> => {
+      if (!raw || typeof raw !== 'object') return {};
+      const src = raw as Record<string, unknown>;
+      const out: Record<string, number> = {};
+      for (const [key, value] of Object.entries(src)) {
+        const n = Number(value);
+        out[key.toLowerCase()] = Number.isFinite(n) ? n : 0;
+      }
+      return out;
+    };
+    const body = {
+      id,
+      ...newUser,
+      quotas: toApiQuotas(newUser.quotas),
+      password: (data as User).password || 'changeme',
+      joinDate: newUser.joinDate,
+    };
     return api.postUser(body as unknown as Record<string, unknown>)
       .then(() => api.getUsers())
       .then((res) => {
