@@ -3,6 +3,7 @@ import { User } from '../types';
 import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
 import { getAllUsers, saveCurrentUser, loadFromApi, updateUser, normalizeUser } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 /** OWASP: Rate limit - max attempts before lockout (client-side; server-side also enforces suspend policy in API mode). */
 const MAX_ATTEMPTS = 3;
@@ -24,26 +25,26 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const isSubmitting = isActionBusy('login');
 
   const users = getAllUsers();
 
   const handleLoginSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (Date.now() < lockedUntil || isSubmitting) return;
-
-    setIsSubmitting(true);
+    runAction('login', async () => {
 
     if (isApiMode()) {
       setConnectionError(false);
       setConnectionErrorMessage(null);
       setAuthErrorMessage(null);
-      apiLogin(email.trim(), password).then(({ user, token }) => {
+      await apiLogin(email.trim(), password).then(({ user, token }) => {
         setAttempts(0);
         setToken(token);
         const normalized = normalizeUser(user as Record<string, unknown>);
         saveCurrentUser(normalized);
-        loadFromApi().then(() => onLogin(normalized));
+        return loadFromApi().then(() => onLogin(normalized));
       }).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         // status >= 500 = เซิร์ฟเวอร์/DB ขัดข้อง, status === 0 = ติดต่อ Backend ไม่ได้ (fetch ล้ม)
@@ -59,8 +60,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setTimeout(() => setIsError(false), 4000);
         // UI lockout (client-side) — backend จะเป็นตัวบังคับ policy suspend ในโหมด API อยู่แล้ว
         if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
-      }).finally(() => {
-        setIsSubmitting(false);
       });
       return;
     }
@@ -72,13 +71,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if ((foundUser as User).isSuspended) {
         setIsError(true);
         setTimeout(() => setIsError(false), 4000);
-        setIsSubmitting(false);
         return;
       }
       setAttempts(0);
       saveCurrentUser(foundUser);
       onLogin(foundUser);
-      setIsSubmitting(false);
     } else {
       const next = attempts + 1;
       setAttempts(next);
@@ -93,8 +90,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         updateUser(updated);
       }
       if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
-      setIsSubmitting(false);
     }
+    });
   }, [email, password, attempts, lockedUntil, users, onLogin, isSubmitting]);
 
   const handleDemoClick = (user: User) => {
@@ -166,6 +163,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <button 
               type="submit"
               disabled={isLocked || isSubmitting}
+              aria-busy={isSubmitting}
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:pointer-events-none"
             >
               {isLocked ? 'กรุณารอสักครู่...' : isSubmitting ? 'กำลังตรวจสอบ Authentication...' : 'เข้าสู่ระบบ'}

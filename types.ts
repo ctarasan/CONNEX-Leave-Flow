@@ -154,6 +154,9 @@ export interface ExpenseClaim {
   rejectedAt?: string;
   rejectReason?: string;
   paidDate?: string; // YYYY-MM-DD
+  paidById?: string;
+  paidByName?: string;
+  paidSetAt?: string;
   adminNote?: string;
   projectSummary?: string;
   detailSummary?: string;

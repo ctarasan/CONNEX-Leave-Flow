@@ -135,3 +135,12 @@ export const formatThaiDateTime = (isoStr: string | Date | null | undefined): st
   const m = bangkok.getUTCMinutes();
   return `${day} ${THAI_MONTHS_SHORT[monthIdx]} ${be}, ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} น.`;
 };
+
+/** แปลงเวลาเป็น HH:MM (ตัดวินาทีออก) */
+export const formatTimeAsHm = (timeStr: string | null | undefined): string => {
+  const s = String(timeStr ?? '').trim();
+  if (!s) return '-';
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return s;
+  return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
+};

@@ -13,6 +13,8 @@ import {
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 interface TimesheetModuleProps {
   currentUser: User;
@@ -39,6 +41,7 @@ const startOfWeek = (d: Date): Date => {
 
 const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate }) => {
   const { showAlert } = useAlert();
+  const { runAction, isActionBusy } = useAsyncAction();
   const [selectedDate, setSelectedDate] = useState<string>(toIso(new Date()));
   const [draftProjectId, setDraftProjectId] = useState('');
   const [draftTaskType, setDraftTaskType] = useState<string>('');
@@ -93,6 +96,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       .map((p) => ({ projectId: p.id, projectName: `${p.code} - ${p.name}`, minutes: byProject[p.id] ?? 0 }))
       .sort((a, b) => b.minutes - a.minutes);
   }, [myEntries, userProjects]);
+  const projectSummaryPagination = useTablePagination(projectSummary);
 
   const monthCalendar = useMemo(() => {
     const y = selectedMonth.getFullYear();
@@ -144,16 +148,18 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
       showAlert('ยังไม่มีประเภท Task ให้เลือก กรุณาให้ Admin ตั้งค่า Task ก่อน');
       return;
     }
-    saveTimesheetEntry({
-      userId: currentUser.id,
-      date: selectedDate,
-      projectId: draftProjectId,
-      taskType: normalizedTaskType,
-      minutes: Math.max(0, draftHours * 60 + draftMinutes),
+    runAction('timesheet-add-entry', async () => {
+      await Promise.resolve(saveTimesheetEntry({
+        userId: currentUser.id,
+        date: selectedDate,
+        projectId: draftProjectId,
+        taskType: normalizedTaskType,
+        minutes: Math.max(0, draftHours * 60 + draftMinutes),
+      }));
+      setRefreshTick((v) => v + 1);
+      onUpdate();
+      showAlert('บันทึก Timesheet เรียบร้อยแล้ว');
     });
-    setRefreshTick((v) => v + 1);
-    onUpdate();
-    showAlert('บันทึก Timesheet เรียบร้อยแล้ว');
   };
 
   return (
@@ -230,7 +236,14 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
               <input type="number" min={0} max={59} value={draftMinutes} onChange={(e) => setDraftMinutes(Number(e.target.value) || 0)} className="w-16 px-2 py-1 text-sm font-bold outline-none" />
               <span className="text-xs font-black text-gray-500">นาที</span>
             </div>
-            <button onClick={saveEntry} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-black">เพิ่มรายการ</button>
+            <button
+              onClick={saveEntry}
+              disabled={isActionBusy('timesheet-add-entry')}
+              aria-busy={isActionBusy('timesheet-add-entry')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-black disabled:opacity-50"
+            >
+              เพิ่มรายการ
+            </button>
           </div>
         </div>
         <div className="space-y-2">
@@ -249,10 +262,14 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
                     onChange={(ev) => {
                       const h = Math.max(0, Number(ev.target.value) || 0);
                       const m = e.minutes % 60;
-                      saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m });
-                      setRefreshTick((v) => v + 1);
-                      onUpdate();
+                      runAction(`timesheet-edit-${e.id}`, async () => {
+                        await Promise.resolve(saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m }));
+                        setRefreshTick((v) => v + 1);
+                        onUpdate();
+                      });
                     }}
+                    disabled={isActionBusy(`timesheet-edit-${e.id}`)}
+                    aria-busy={isActionBusy(`timesheet-edit-${e.id}`)}
                     className="w-16 px-1 py-1 text-sm font-bold outline-none"
                   />
                   <span className="text-xs text-gray-500">ชั่วโมง</span>
@@ -266,10 +283,14 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
                     onChange={(ev) => {
                       const h = Math.floor(e.minutes / 60);
                       const m = Math.min(59, Math.max(0, Number(ev.target.value) || 0));
-                      saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m });
-                      setRefreshTick((v) => v + 1);
-                      onUpdate();
+                      runAction(`timesheet-edit-${e.id}`, async () => {
+                        await Promise.resolve(saveTimesheetEntry({ userId: e.userId, date: e.date, projectId: e.projectId, taskType: e.taskType, minutes: h * 60 + m }));
+                        setRefreshTick((v) => v + 1);
+                        onUpdate();
+                      });
                     }}
+                    disabled={isActionBusy(`timesheet-edit-${e.id}`)}
+                    aria-busy={isActionBusy(`timesheet-edit-${e.id}`)}
                     className="w-16 px-1 py-1 text-sm font-bold outline-none"
                   />
                   <span className="text-xs text-gray-500">นาที</span>
@@ -287,7 +308,7 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
           <table className="w-full text-left">
             <thead><tr className="text-xs text-gray-400"><th className="py-2">โครงการ</th><th className="py-2 text-right">ชั่วโมงรวม</th></tr></thead>
             <tbody>
-              {projectSummary.map((r) => (
+              {projectSummaryPagination.pagedItems.map((r) => (
                 <tr key={r.projectId} className="border-t">
                   <td className="py-2 text-sm font-bold">{r.projectName}</td>
                   <td className="py-2 text-right text-sm font-black">{(r.minutes / 60).toFixed(2)} ชม.</td>
@@ -296,6 +317,16 @@ const TimesheetModule: React.FC<TimesheetModuleProps> = ({ currentUser, onUpdate
             </tbody>
           </table>
         </div>
+        <TablePagination
+          page={projectSummaryPagination.page}
+          pageSize={projectSummaryPagination.pageSize}
+          totalItems={projectSummaryPagination.totalItems}
+          totalPages={projectSummaryPagination.totalPages}
+          rangeStart={projectSummaryPagination.rangeStart}
+          rangeEnd={projectSummaryPagination.rangeEnd}
+          onPageChange={projectSummaryPagination.setPage}
+          onPageSizeChange={projectSummaryPagination.setPageSize}
+        />
       </div>
 
       {isManagerOrAdmin && (

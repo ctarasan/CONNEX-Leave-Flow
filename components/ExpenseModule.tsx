@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { toCanvas } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import { ExpenseClaim, ExpenseClaimItem, ExpenseTypeDefinition, User, UserRole } from '../types';
 import {
   approveExpenseClaim,
@@ -13,6 +15,8 @@ import {
 import { getAllUsers, getTimesheetProjectsForUser } from '../store';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 type RangePreset = 'today' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 const normalizeId = (raw: unknown): string => {
@@ -76,6 +80,9 @@ function parseClaims(raw: Record<string, unknown>[]): ExpenseClaim[] {
     rejectedAt: x.rejectedAt ? String(x.rejectedAt) : undefined,
     rejectReason: x.rejectReason ? String(x.rejectReason) : undefined,
     paidDate: x.paidDate ? String(x.paidDate) : undefined,
+    paidById: x.paidById ? String(x.paidById) : undefined,
+    paidByName: x.paidByName ? String(x.paidByName) : undefined,
+    paidSetAt: x.paidSetAt ? String(x.paidSetAt) : undefined,
     adminNote: x.adminNote ? String(x.adminNote) : undefined,
     projectSummary: x.projectSummary ? String(x.projectSummary) : '-',
     detailSummary: x.detailSummary ? String(x.detailSummary) : '-',
@@ -108,6 +115,9 @@ function parseClaimDetail(raw: Record<string, unknown>): ExpenseClaim {
     rejectedAt: raw.rejectedAt ? String(raw.rejectedAt) : undefined,
     rejectReason: raw.rejectReason ? String(raw.rejectReason) : undefined,
     paidDate: raw.paidDate ? String(raw.paidDate) : undefined,
+    paidById: raw.paidById ? String(raw.paidById) : undefined,
+    paidByName: raw.paidByName ? String(raw.paidByName) : undefined,
+    paidSetAt: raw.paidSetAt ? String(raw.paidSetAt) : undefined,
     adminNote: raw.adminNote ? String(raw.adminNote) : undefined,
     totalAmount: Number(raw.totalAmount ?? 0),
     createdAt: String(raw.createdAt ?? ''),
@@ -117,6 +127,7 @@ function parseClaimDetail(raw: Record<string, unknown>): ExpenseClaim {
 }
 
 const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
+  type ClaimSortKey = 'id' | 'requesterName' | 'claimDate';
   const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeDefinition[]>([]);
   const [claims, setClaims] = useState<ExpenseClaim[]>([]);
   const [scope, setScope] = useState<'mine' | 'subordinates' | 'all'>(
@@ -126,15 +137,32 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   const initRange = rangeFromPreset('thisMonth');
   const [fromDate, setFromDate] = useState(initRange.from);
   const [toDate, setToDate] = useState(initRange.to);
+  const [requesterQuery, setRequesterQuery] = useState('');
+  const [sortKey, setSortKey] = useState<ClaimSortKey>('claimDate');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [claimId, setClaimId] = useState('');
   const [claimDate, setClaimDate] = useState(toYmd(new Date()));
   const [items, setItems] = useState<ExpenseClaimItem[]>([
     { id: `tmp-${Date.now()}`, expenseDate: toYmd(new Date()), projectId: '', expenseTypeId: '', detail: '', amount: 0 },
   ]);
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const { runAction, isActionBusy } = useAsyncAction();
   const [detail, setDetail] = useState<ExpenseClaim | null>(null);
   const [payDate, setPayDate] = useState(toYmd(new Date()));
+  const pdfSheetRef = useRef<HTMLDivElement | null>(null);
   const myProjects = getTimesheetProjectsForUser(currentUser.id);
+  const projectNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const users = getAllUsers();
+    for (const u of users) {
+      const projects = getTimesheetProjectsForUser(u.id);
+      for (const p of projects) {
+        if (!map.has(p.id)) map.set(p.id, p.name || p.id);
+      }
+    }
+    return map;
+  }, [currentUser.id]);
   const canUseScopeFilter = useMemo(() => {
     if (currentUser.role === UserRole.ADMIN) return true;
     const me = normalizeId(currentUser.id);
@@ -143,6 +171,37 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
 
   const activeExpenseTypes = useMemo(() => expenseTypes.filter((t) => t.isActive), [expenseTypes]);
   const claimTotal = useMemo(() => items.reduce((s, it) => s + (Number(it.amount) || 0), 0), [items]);
+  const filteredClaims = useMemo(() => {
+    const q = requesterQuery.trim().toLowerCase();
+    if (!q) return claims;
+    return claims.filter((c) => String(c.requesterName ?? '').toLowerCase().includes(q));
+  }, [claims, requesterQuery]);
+  const sortedClaims = useMemo(() => {
+    const list = [...filteredClaims];
+    list.sort((a, b) => {
+      const av = String(a[sortKey] ?? '').toLowerCase();
+      const bv = String(b[sortKey] ?? '').toLowerCase();
+      const cmp = av.localeCompare(bv, 'th', { numeric: true });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [filteredClaims, sortDir, sortKey]);
+  const itemPagination = useTablePagination(items);
+  const claimPagination = useTablePagination(sortedClaims);
+
+  const toggleSort = (key: ClaimSortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('asc');
+  };
+
+  const sortIndicator = (key: ClaimSortKey): string => {
+    if (sortKey !== key) return '▲▼';
+    return sortDir === 'asc' ? '▲' : '▼';
+  };
 
   const statusLabel = (c: ExpenseClaim) => {
     if (c.status === 'PAID' && c.paidDate) return `Approved (${formatYmdAsDdMmBe(c.paidDate)})`;
@@ -159,9 +218,18 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   };
   const loadClaims = async () => {
     const raw = await getExpenseClaims({ from: fromDate, to: toDate, scope });
-    const parsed = parseClaims(raw);
+    let parsed = parseClaims(raw);
     const me = normalizeId(currentUser.id);
     const mergedById = new Map<string, ExpenseClaim>(parsed.map((c) => [c.id, c]));
+
+    // Admin โหมด "ผู้ใต้บังคับบัญชา": รวมผลจาก scope=all เพิ่ม
+    // เพื่อกันเคสข้อมูลตกหล่นจากเงื่อนไข hierarchy/query บางชุด
+    if (currentUser.role === UserRole.ADMIN && scope === 'subordinates') {
+      const allRaw = await getExpenseClaims({ from: fromDate, to: toDate, scope: 'all' });
+      const allParsed = parseClaims(allRaw);
+      parsed = [...parsed, ...allParsed];
+      for (const c of allParsed) mergedById.set(c.id, c);
+    }
 
     // บังคับให้เจ้าของรายการเห็นเอกสารที่ถูก Reject เสมอ เพื่อแก้ไขและ Submit ใหม่ได้
     if (currentUser.role !== UserRole.ADMIN) {
@@ -171,11 +239,22 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
       );
       for (const c of mineRejected) mergedById.set(c.id, c);
     }
-    const merged = Array.from(mergedById.values());
+    let merged = Array.from(mergedById.values());
+    if (scope === 'subordinates') {
+      // โหมด "ผู้ใต้บังคับบัญชา" ต้องไม่รวมรายการของผู้ใช้ที่ล็อกอินอยู่
+      merged = merged.filter((c) => normalizeId(c.requesterId) !== me);
+      // ผู้บังคับบัญชาไม่ควรเห็นรายการที่ยังเป็น Save (DRAFT) ของลูกทีม
+      merged = merged.filter((c) => c.status !== 'DRAFT');
+    }
+    if (scope === 'all') {
+      // โหมด "ทั้งหมด": ซ่อน Save (DRAFT) เฉพาะรายการของผู้ใต้บังคับบัญชา
+      // แต่ยังคงให้เห็นรายการ Save ของผู้ใช้ที่ล็อกอินเอง
+      merged = merged.filter((c) => !(normalizeId(c.requesterId) !== me && c.status === 'DRAFT'));
+    }
     if (currentUser.role === UserRole.MANAGER && scope === 'subordinates') {
       // Manager board: ซ่อนรายการที่ Reject แล้วสำหรับ "ลูกทีม"
       // แต่ต้องยังเห็นรายการของตัวเองที่ถูก Reject เพื่อแก้ไขและ Submit ใหม่ได้
-      setClaims(merged.filter((c) => c.status !== 'REJECTED' || normalizeId(c.requesterId) === me));
+      setClaims(merged.filter((c) => c.status !== 'REJECTED'));
       return;
     }
     setClaims(merged);
@@ -212,7 +291,12 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   };
 
   const saveClaim = async (submit: boolean) => {
+    const today = toYmd(new Date());
     if (!claimDate) return alert('กรุณาระบุวันที่ทำรายการเบิก');
+    if (claimDate > today) return alert('วันที่ทำรายการเบิกต้องไม่เกินวันปัจจุบัน');
+    if (items.some((it) => it.expenseDate > today)) {
+      return alert('วันที่ในรายการค่าใช้จ่ายต้องไม่เกินวันปัจจุบัน');
+    }
     if (items.some((it) => !it.expenseDate || !it.expenseTypeId || Number(it.amount) <= 0)) {
       return alert('กรุณากรอกข้อมูลรายการค่าใช้จ่ายให้ครบถ้วน และยอดเงินมากกว่า 0');
     }
@@ -310,13 +394,13 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
   };
 
   const handleExportCsv = () => {
-    if (claims.length === 0) {
+    if (filteredClaims.length === 0) {
       alert('ไม่พบข้อมูลสำหรับ Export');
       return;
     }
     const rows = [
       ['เลขที่ใบเบิก', 'ผู้ขอเบิก', 'วันที่ทำรายการ', 'ยอดรวม(บาท)', 'สถานะ', 'ผู้อนุมัติ'],
-      ...claims.map((c) => [
+      ...filteredClaims.map((c) => [
         c.id,
         c.requesterName,
         formatYmdAsDdMmBe(c.claimDate),
@@ -337,15 +421,73 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
     URL.revokeObjectURL(url);
   };
 
+  const exportDetailAsPdf = async (docId: string) => {
+    if (!pdfSheetRef.current) {
+      alert('ไม่พบเนื้อหาเอกสารสำหรับสร้าง PDF');
+      return;
+    }
+    const target = pdfSheetRef.current;
+    setPdfLoading(true);
+    try {
+      const canvas = await toCanvas(target, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: '#ffffff',
+        width: target.scrollWidth,
+        height: target.scrollHeight,
+        style: {
+          margin: '0',
+          transform: 'none',
+        },
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const marginLeft = 25.4; // 1 inch
+      const marginRight = 25.4; // 1 inch
+      const marginTop = 25.4; // 1 inch
+      const marginBottom = 25.4; // safe area
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      const contentHeight = pageHeight - marginTop - marginBottom;
+      const imgWidth = contentWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = marginTop;
+      pdf.addImage(imgData, 'PNG', marginLeft, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= contentHeight;
+      while (heightLeft > 0) {
+        position = marginTop - (imgHeight - heightLeft);
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', marginLeft, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= contentHeight;
+      }
+      pdf.save(`expense-${docId}.pdf`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'ไม่สามารถแปลงเอกสารเป็น PDF ได้');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <style>{`
+        @page {
+          size: A4 landscape;
+          margin: 1in;
+        }
         @media print {
           .no-print { display: none !important; }
           .print-sheet {
             border: 0 !important;
             box-shadow: none !important;
             padding: 0 !important;
+          }
+          .pdf-sheet-content {
+            width: auto !important;
+            max-width: none !important;
+            margin: 0 !important;
           }
         }
       `}</style>
@@ -365,12 +507,20 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             <input value={currentUser.name} disabled className="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-gray-50" />
           </label>
           <div className="text-xs font-bold text-gray-600">
-            <DatePicker label="วันที่ทำรายการเบิก" value={claimDate} onChange={setClaimDate} size="compact" />
+            <DatePicker
+              label="วันที่ทำรายการเบิก"
+              value={claimDate}
+              onChange={setClaimDate}
+              size="compact"
+              maxDate={toYmd(new Date())}
+              disableHolidayWeekend={false}
+            />
           </div>
         </div>
 
-        <div className="overflow-x-auto border rounded-xl">
-          <table className="w-full text-left text-sm">
+        <div className="border rounded-xl overflow-visible">
+          <div className="overflow-x-auto overflow-y-visible">
+            <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 text-xs text-gray-600 font-bold">
               <tr>
                 <th className="px-3 py-2">วันที่</th>
@@ -382,13 +532,22 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
+              {itemPagination.pagedItems.map((it) => (
                 <tr key={it.id} className="border-t">
-                  <td className="px-3 py-2 min-w-[130px]"><DatePicker label="" value={it.expenseDate} onChange={(v) => updateItem(it.id, { expenseDate: v })} size="compact" /></td>
+                  <td className="px-3 py-2 min-w-[130px]">
+                    <DatePicker
+                      label=""
+                      value={it.expenseDate}
+                      onChange={(v) => updateItem(it.id, { expenseDate: v })}
+                      size="compact"
+                      maxDate={toYmd(new Date())}
+                      disableHolidayWeekend={false}
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <select value={it.projectId} onChange={(e) => updateItem(it.id, { projectId: e.target.value })} className="w-full border rounded px-2 py-1">
                       <option value="">ไม่ระบุโครงการ</option>
-                      {myProjects.map((p) => <option key={p.id} value={p.id}>{p.code} - {p.name}</option>)}
+                      {myProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </td>
                   <td className="px-3 py-2">
@@ -403,14 +562,25 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
+        <TablePagination
+          page={itemPagination.page}
+          pageSize={itemPagination.pageSize}
+          totalItems={itemPagination.totalItems}
+          totalPages={itemPagination.totalPages}
+          rangeStart={itemPagination.rangeStart}
+          rangeEnd={itemPagination.rangeEnd}
+          onPageChange={itemPagination.setPage}
+          onPageSizeChange={itemPagination.setPageSize}
+        />
         <div className="flex items-center justify-between mt-3">
           <button onClick={addItem} className="px-3 py-2 rounded-lg bg-gray-100 text-xs font-bold">+ เพิ่มรายการ</button>
           <div className="text-sm font-black text-gray-800">รวมทั้งสิ้น {claimTotal.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</div>
         </div>
         <div className="mt-4 flex gap-2">
-          <button disabled={loading} onClick={() => saveClaim(false)} className="px-4 py-2 rounded-lg bg-gray-800 text-white text-xs font-bold">Save</button>
+          <button disabled={loading} aria-busy={loading} onClick={() => saveClaim(false)} className="px-4 py-2 rounded-lg bg-gray-800 text-white text-xs font-bold">Save</button>
           {claimId && (
             <button
               type="button"
@@ -437,6 +607,12 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             <option value="lastMonth">เดือนที่แล้ว</option>
             <option value="custom">กำหนดช่วงเอง</option>
           </select>
+          <input
+            value={requesterQuery}
+            onChange={(e) => setRequesterQuery(e.target.value)}
+            placeholder="ระบุผู้ขอเบิก (พิมพ์ชื่อบางส่วน)"
+            className="border rounded-lg px-2 py-1 text-xs min-w-[220px]"
+          />
           <div className="min-w-[130px]"><DatePicker label="" value={fromDate} onChange={(v) => { setPreset('custom'); setFromDate(v); }} size="compact" /></div>
           <div className="min-w-[130px]"><DatePicker label="" value={toDate} onChange={(v) => { setPreset('custom'); setToDate(v); }} size="compact" /></div>
           {canUseScopeFilter && (
@@ -448,13 +624,26 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
           )}
           <button onClick={handleExportCsv} className="border rounded-lg px-3 py-1 text-xs font-bold text-blue-700 border-blue-200 bg-blue-50">Export CSV</button>
         </div>
-        <div className="overflow-x-auto border rounded-xl">
-          <table className="w-full text-left text-sm">
+        <div className="border rounded-xl overflow-visible">
+          <div className="overflow-x-auto overflow-y-visible">
+            <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 text-xs text-gray-600 font-bold">
               <tr>
-                <th className="px-3 py-2">เลขที่</th>
-                <th className="px-3 py-2">ผู้ขอเบิก</th>
-                <th className="px-3 py-2">วันที่</th>
+                <th className="px-3 py-2">
+                  <button type="button" onClick={() => toggleSort('id')} className="inline-flex items-center gap-1 font-bold">
+                    เลขที่เอกสาร <span className="text-[10px] text-[#F59E0B]">{sortIndicator('id')}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2">
+                  <button type="button" onClick={() => toggleSort('claimDate')} className="inline-flex items-center gap-1 font-bold">
+                    วันที่ <span className="text-[10px] text-[#F59E0B]">{sortIndicator('claimDate')}</span>
+                  </button>
+                </th>
+                <th className="px-3 py-2">
+                  <button type="button" onClick={() => toggleSort('requesterName')} className="inline-flex items-center gap-1 font-bold">
+                    ผู้ขอเบิก <span className="text-[10px] text-[#F59E0B]">{sortIndicator('requesterName')}</span>
+                  </button>
+                </th>
                 <th className="px-3 py-2">ชื่อโครงการ</th>
                 <th className="px-3 py-2">รายละเอียดที่เบิก</th>
                 <th className="px-3 py-2 text-right">ยอดรวม</th>
@@ -463,18 +652,25 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody>
-              {claims.map((c) => (
+              {claimPagination.pagedItems.map((c) => (
                 <tr key={c.id} className="border-t">
                   <td className="px-3 py-2 font-bold">{c.id}</td>
-                  <td className="px-3 py-2">{c.requesterName}</td>
                   <td className="px-3 py-2">{formatYmdAsDdMmBe(c.claimDate)}</td>
+                  <td className="px-3 py-2">{c.requesterName}</td>
                   <td className="px-3 py-2 max-w-[220px] truncate" title={c.projectSummary || '-'}>{c.projectSummary || '-'}</td>
                   <td className="px-3 py-2 max-w-[260px] truncate" title={c.detailSummary || '-'}>{c.detailSummary || '-'}</td>
                   <td className="px-3 py-2 text-right">{Number(c.totalAmount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="px-3 py-2"><span className="text-xs font-bold">{statusLabel(c)}</span></td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={() => openDetail(c.id)} className="text-xs font-bold text-blue-600">ดู/พิมพ์</button>
+                      <button
+                        onClick={() => runAction(`open-${c.id}`, () => openDetail(c.id))}
+                        disabled={isActionBusy(`open-${c.id}`)}
+                        aria-busy={isActionBusy(`open-${c.id}`)}
+                        className="text-xs font-bold text-blue-600"
+                      >
+                        ดู/พิมพ์
+                      </button>
                       {(c.status === 'DRAFT' || c.status === 'REJECTED') && normalizeId(c.requesterId) === normalizeId(currentUser.id) && (
                         <button
                           onClick={() => editClaim(c.id)}
@@ -485,23 +681,30 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                       )}
                       {(c.status === 'DRAFT' || c.status === 'REJECTED') && normalizeId(c.requesterId) === normalizeId(currentUser.id) && (
                         <button
-                          onClick={async () => {
+                          onClick={() => runAction(`submit-${c.id}`, async () => {
                             try {
                               await submitExpenseClaim(c.id);
                               await loadClaims();
                             } catch (err) {
                               alert(err instanceof Error ? err.message : 'ไม่สามารถ Submit ใบเบิกได้');
                             }
-                          }}
+                          })}
+                          disabled={isActionBusy(`submit-${c.id}`)}
+                          aria-busy={isActionBusy(`submit-${c.id}`)}
                           className="text-xs font-bold text-indigo-600"
                         >
                           Submit
                         </button>
                       )}
-                      {canReview(c) && <button onClick={async () => { try { await approveExpenseClaim(c.id); await loadClaims(); } catch (err) { alert(err instanceof Error ? err.message : 'ไม่สามารถอนุมัติได้'); } }} className="text-xs font-bold text-emerald-600">อนุมัติ</button>}
+                      {canReview(c) && <button
+                        onClick={() => runAction(`approve-${c.id}`, async () => { try { await approveExpenseClaim(c.id); await loadClaims(); } catch (err) { alert(err instanceof Error ? err.message : 'ไม่สามารถอนุมัติได้'); } })}
+                        disabled={isActionBusy(`approve-${c.id}`) || isActionBusy(`reject-${c.id}`)}
+                        aria-busy={isActionBusy(`approve-${c.id}`)}
+                        className="text-xs font-bold text-emerald-600"
+                      >อนุมัติ</button>}
                       {canReview(c) && (
                         <button
-                          onClick={async () => {
+                          onClick={() => runAction(`reject-${c.id}`, async () => {
                             const reason = window.prompt('ระบุเหตุผลการไม่อนุมัติ', c.rejectReason || '');
                             if (!reason || !reason.trim()) return;
                             try {
@@ -510,7 +713,9 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                             } catch (err) {
                               alert(err instanceof Error ? err.message : 'ไม่สามารถ Reject ได้');
                             }
-                          }}
+                          })}
+                          disabled={isActionBusy(`approve-${c.id}`) || isActionBusy(`reject-${c.id}`)}
+                          aria-busy={isActionBusy(`reject-${c.id}`)}
                           className="text-xs font-bold text-rose-600"
                         >
                           Reject
@@ -518,13 +723,15 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                       )}
                       {currentUser.role === UserRole.ADMIN && (c.status === 'APPROVED' || c.status === 'PAID') && (
                         <button
-                          onClick={async () => {
+                          onClick={() => runAction(`paydate-${c.id}`, async () => {
                             const value = prompt('ระบุวันทำจ่าย (YYYY-MM-DD)', payDate);
                             if (!value) return;
                             setPayDate(value);
                             await setExpenseClaimPayDate(c.id, value);
                             await loadClaims();
-                          }}
+                          })}
+                          disabled={isActionBusy(`paydate-${c.id}`)}
+                          aria-busy={isActionBusy(`paydate-${c.id}`)}
                           className="text-xs font-bold text-violet-600"
                         >
                           กำหนดวันทำจ่าย
@@ -534,12 +741,23 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                   </td>
                 </tr>
               ))}
-              {claims.length === 0 && (
+              {filteredClaims.length === 0 && (
                 <tr><td colSpan={8} className="text-center py-6 text-sm text-gray-400">ไม่พบข้อมูลรายการเบิกในช่วงเวลาที่เลือก</td></tr>
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
+        <TablePagination
+          page={claimPagination.page}
+          pageSize={claimPagination.pageSize}
+          totalItems={claimPagination.totalItems}
+          totalPages={claimPagination.totalPages}
+          rangeStart={claimPagination.rangeStart}
+          rangeEnd={claimPagination.rangeEnd}
+          onPageChange={claimPagination.setPage}
+          onPageSizeChange={claimPagination.setPageSize}
+        />
       </div>
 
       {detail && (
@@ -550,20 +768,26 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
               <p className="text-xs text-gray-600">ผู้ขอเบิก: {detail.requesterName} | วันที่: {formatYmdAsDdMmBe(detail.claimDate)} | สถานะ: {statusLabel(detail)}</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold">พิมพ์เอกสาร</button>
+              <button
+                onClick={() => exportDetailAsPdf(detail.id)}
+                disabled={pdfLoading}
+                aria-busy={pdfLoading}
+                className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-60"
+              >
+                {pdfLoading ? 'กำลังสร้าง PDF...' : 'พิมพ์เอกสาร (PDF)'}
+              </button>
               <button onClick={() => setDetail(null)} className="px-3 py-2 rounded-lg bg-gray-100 text-xs font-bold">ปิด</button>
             </div>
           </div>
-          <div className="mt-3 border rounded-xl overflow-x-auto p-4">
+          <div ref={pdfSheetRef} className="pdf-sheet-content mt-3 border rounded-xl p-4 bg-white w-[246mm] max-w-full mx-auto">
             <div className="text-center border-b pb-3 mb-3">
               <img src="/connex-logo.png" alt="CONNEX" className="h-8 mx-auto mb-2 object-contain" />
               <h2 className="text-lg font-black">แบบฟอร์มใบเบิกค่าใช้จ่ายทั่วไป</h2>
-              <p className="text-sm font-bold">บริษัท คอนเนค บิสสิเนส ออนไลน์ จำกัด (CONNEX Business Online Co., Ltd.)</p>
-              <p className="text-xs text-gray-600 mt-1">เลขที่เอกสาร: {detail.id} | วันที่ทำรายการ: {formatYmdAsDdMmBe(detail.claimDate)}</p>
+              <p className="text-sm font-bold">บริษัท คอนเนค บิสสิเนส ออนไลน์ จำกัด</p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-              <div><span className="font-bold">ผู้ขอเบิก:</span> {detail.requesterName}</div>
-              <div><span className="font-bold">ผู้อนุมัติ:</span> {detail.approverName || '-'}</div>
+              <div><span className="font-bold">เลขที่เอกสาร:</span> {detail.id}</div>
+              <div><span className="font-bold">วันที่ทำรายการ:</span> {formatYmdAsDdMmBe(detail.claimDate)}</div>
               <div><span className="font-bold">สถานะ:</span> {statusLabel(detail)}</div>
               <div><span className="font-bold">วันทำจ่าย:</span> {detail.paidDate ? formatYmdAsDdMmBe(detail.paidDate) : '-'}</div>
             </div>
@@ -581,7 +805,7 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                 {detail.items.map((it) => (
                   <tr key={it.id} className="border-t">
                     <td className="px-3 py-2 border-r">{formatYmdAsDdMmBe(it.expenseDate)}</td>
-                    <td className="px-3 py-2 border-r">{it.projectId || '-'}</td>
+                    <td className="px-3 py-2 border-r">{it.projectId ? (projectNameById.get(it.projectId) || it.projectId) : '-'}</td>
                     <td className="px-3 py-2 border-r">{expenseTypes.find((t) => t.id === it.expenseTypeId)?.label ?? it.expenseTypeId}</td>
                     <td className="px-3 py-2 border-r">{it.detail}</td>
                     <td className="px-3 py-2 text-right">{Number(it.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -600,19 +824,19 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 text-sm">
               <div className="border rounded-lg p-3 min-h-[100px]">
-                <p className="font-bold mb-10">ผู้ขอเบิก</p>
-                <p>ลงชื่อ ....................................................</p>
-                <p>วันที่ ....................................................</p>
+                <p className="font-bold mb-4">ผู้ขอเบิก</p>
+                <p>ลงชื่อ {detail.requesterName || '....................................................'}</p>
+                <p>วันที่ {formatYmdAsDdMmBe(detail.claimDate)}</p>
               </div>
               <div className="border rounded-lg p-3 min-h-[100px]">
-                <p className="font-bold mb-10">ผู้อนุมัติ</p>
-                <p>ลงชื่อ ....................................................</p>
-                <p>วันที่ ....................................................</p>
+                <p className="font-bold mb-4">ผู้อนุมัติ</p>
+                <p>ลงชื่อ {detail.approverName || '....................................................'}</p>
+                <p>วันที่ {detail.approvedAt ? formatYmdAsDdMmBe(detail.approvedAt) : '....................................................'}</p>
               </div>
               <div className="border rounded-lg p-3 min-h-[100px]">
-                <p className="font-bold mb-10">การเงิน/บัญชี</p>
-                <p>ลงชื่อ ....................................................</p>
-                <p>วันที่ ....................................................</p>
+                <p className="font-bold mb-4">การเงิน/บัญชี</p>
+                <p>ลงชื่อ {detail.paidByName || (detail.status === 'PAID' ? 'ผู้ดูแลระบบ' : '....................................................')}</p>
+                <p>วันที่ {(detail.paidSetAt || detail.paidDate) ? formatYmdAsDdMmBe(detail.paidSetAt || detail.paidDate || '') : '....................................................'}</p>
               </div>
             </div>
           </div>

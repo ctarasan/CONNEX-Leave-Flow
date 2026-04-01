@@ -4,6 +4,7 @@ import { useAlert } from '../AlertContext';
 import { HOLIDAYS_2026 } from '../constants';
 import { saveLeaveRequest, getLeaveRequests, getLeaveTypesForGender, getDefaultQuotaForLeaveType } from '../store';
 import DatePicker from './DatePicker';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface LeaveFormProps {
   user: User;
@@ -23,7 +24,8 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const loading = isActionBusy('submit-leave');
   const [usage, setUsage] = useState<Record<string, number>>({});
 
   const calculateBusinessDays = (startStr: string, endStr: string) => {
@@ -116,39 +118,38 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
     const trimmedReason = reason.trim();
     if (validationMessage || !startDate || !endDate || !trimmedReason) return;
     if (trimmedReason.length > 2000) return;
-    setLoading(true);
-    console.log('🔵 [LeaveForm] กำลังส่งคำขอลา...');
-    try {
-      const result = await saveLeaveRequest({
-        userId: user.id,
-        userName: user.name,
-        type,
-        startDate,
-        endDate,
-        reason: trimmedReason,
-      });
-      setLoading(false);
-      if (result.ok) {
-        console.log('✅ [LeaveForm] ส่งคำขอลาสำเร็จ', result.savedToServer ? 'ลงเซิร์ฟเวอร์' : 'ในเครื่อง');
-        onSuccess();
-        setStartDate('');
-        setEndDate('');
-        setReason('');
-        const daysText = `จำนวน ${requestedDays} วันทำการ`;
-        if (result.savedToServer) {
-          showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกลง Supabase แล้ว`);
+    await runAction('submit-leave', async () => {
+      console.log('🔵 [LeaveForm] กำลังส่งคำขอลา...');
+      try {
+        const result = await saveLeaveRequest({
+          userId: user.id,
+          userName: user.name,
+          type,
+          startDate,
+          endDate,
+          reason: trimmedReason,
+        });
+        if (result.ok) {
+          console.log('✅ [LeaveForm] ส่งคำขอลาสำเร็จ', result.savedToServer ? 'ลงเซิร์ฟเวอร์' : 'ในเครื่อง');
+          onSuccess();
+          setStartDate('');
+          setEndDate('');
+          setReason('');
+          const daysText = `จำนวน ${requestedDays} วันทำการ`;
+          if (result.savedToServer) {
+            showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกลง Supabase แล้ว`);
+          } else {
+            showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกเฉพาะในเครื่องนี้ ไม่ได้ส่งไป Supabase (ตั้ง VITE_API_URL แล้ว Redeploy เพื่อเชื่อมเซิร์ฟเวอร์)`);
+          }
         } else {
-          showAlert(`ส่งใบลาเรียบร้อยแล้ว (${daysText}) — บันทึกเฉพาะในเครื่องนี้ ไม่ได้ส่งไป Supabase (ตั้ง VITE_API_URL แล้ว Redeploy เพื่อเชื่อมเซิร์ฟเวอร์)`);
+          console.error('❌ [LeaveForm] ส่งคำขอลาล้มเหลว:', result.error);
+          showAlert(result.error);
         }
-      } else {
-        console.error('❌ [LeaveForm] ส่งคำขอลาล้มเหลว:', result.error);
-        showAlert(result.error);
+      } catch (err) {
+        console.error('❌ [LeaveForm] Error:', err);
+        showAlert('เกิดข้อผิดพลาด กรุณาลองใหม่');
       }
-    } catch (err) {
-      setLoading(false);
-      console.error('❌ [LeaveForm] Error:', err);
-      showAlert('เกิดข้อผิดพลาด กรุณาลองใหม่');
-    }
+    });
   };
 
   if (leaveTypeOptions.length === 0) {
@@ -225,7 +226,7 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
           </div>
         )}
 
-        <button type="submit" disabled={loading || !!validationMessage || !startDate || !endDate} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition disabled:opacity-40 shadow-xl shadow-blue-100 active:scale-[0.98]">
+        <button type="submit" disabled={loading || !!validationMessage || !startDate || !endDate} aria-busy={loading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition disabled:opacity-40 shadow-xl shadow-blue-100 active:scale-[0.98]">
           {loading ? 'กำลังประมวลผล...' : 'ยืนยันการส่งใบลา'}
         </button>
       </form>

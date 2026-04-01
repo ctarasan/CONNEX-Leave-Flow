@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { User, UserRole } from '../types';
 import { getAllUsers, getSubordinateIdsRecursive, getTimesheetEntries, getTimesheetProjects, getTimesheetTaskTypes } from '../store';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 interface ProjectTimesheetReportProps {
   currentUser: User;
@@ -99,6 +100,7 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
       return row;
     }).filter((row) => managerProjects.some((p) => Number(row[p.id] ?? 0) > 0));
   }, [allUsers, isManagerOrAdmin, managerProjects, pivotMode, scopedEntries, taskTypes]);
+  const pivotRowsPagination = useTablePagination(pivotRows);
 
   const performanceData = useMemo(() => {
     if (!isManagerOrAdmin) return [];
@@ -160,7 +162,7 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
               </tr>
             </thead>
             <tbody>
-              {pivotRows.map((row, i) => (
+              {pivotRowsPagination.pagedItems.map((row, i) => (
                 <tr key={`${row.label}-${i}`} className="border-t">
                   <td className="py-2 text-sm font-bold">{String(row.label)}</td>
                   {managerProjects.map((p) => (
@@ -171,6 +173,16 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
             </tbody>
           </table>
         </div>
+        <TablePagination
+          page={pivotRowsPagination.page}
+          pageSize={pivotRowsPagination.pageSize}
+          totalItems={pivotRowsPagination.totalItems}
+          totalPages={pivotRowsPagination.totalPages}
+          rangeStart={pivotRowsPagination.rangeStart}
+          rangeEnd={pivotRowsPagination.rangeEnd}
+          onPageChange={pivotRowsPagination.setPage}
+          onPageSizeChange={pivotRowsPagination.setPageSize}
+        />
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-200 p-6 space-y-4">

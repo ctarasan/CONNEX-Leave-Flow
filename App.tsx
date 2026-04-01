@@ -4,7 +4,7 @@ import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceReco
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId, calculateLatePenaltyDays } from './store';
 import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT, getSessionCheck } from './api';
 import LeaveForm from './components/LeaveForm';
-import ApprovalBoard from './components/ApprovalBoard';
+import PendingApprovalsBoard from './components/PendingApprovalsBoard';
 import NotificationCenter from './components/NotificationCenter';
 import ReportSummary from './components/ReportSummary';
 import AdminPanel from './components/AdminPanel';
@@ -16,8 +16,9 @@ import ProjectTimesheetReport from './components/ProjectTimesheetReport';
 import ExpenseModule from './components/ExpenseModule';
 import Login from './components/Login';
 import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from './constants';
-import { todayLocalYmd, formatYmdAsDdMmBe, formatBangkokDateAsDdMmBe } from './utils';
+import { todayLocalYmd, formatYmdAsDdMmBe, formatBangkokDateAsDdMmBe, formatTimeAsHm } from './utils';
 import { useAlert } from './AlertContext';
+import { BarChart3, Clock3, History, Home, ReceiptText, Settings2 } from 'lucide-react';
 
 /** ประเภทวันลาที่แสดงบนแดชบอร์ดโดย default: ลาป่วย ลาพักร้อน ลากิจ */
 const DEFAULT_DASHBOARD_LEAVE_IDS = ['SICK', 'VACATION', 'PERSONAL'];
@@ -59,6 +60,28 @@ const App: React.FC = () => {
       curDate.setDate(curDate.getDate() + 1);
     }
     return count;
+  };
+
+  const calculateWorkedHours = (rec: AttendanceRecord): string => {
+    if (!rec.checkIn || !rec.checkOut) return '-';
+    const inHm = formatTimeAsHm(rec.checkIn);
+    const outHm = formatTimeAsHm(rec.checkOut);
+    if (inHm === '-' || outHm === '-') return '-';
+
+    const [inH, inM] = inHm.split(':').map(Number);
+    const [outH, outM] = outHm.split(':').map(Number);
+    if (![inH, inM, outH, outM].every((n) => Number.isFinite(n))) return '-';
+
+    const inMinutes = inH * 60 + inM;
+    const outMinutes = outH * 60 + outM;
+    let diffMinutes = outMinutes - inMinutes;
+    if (diffMinutes < 0) diffMinutes += 24 * 60;
+    if (diffMinutes <= 0) return '-';
+
+    if (diffMinutes < 60) return `${diffMinutes} นาที`;
+    const hours = Math.floor(diffMinutes / 60);
+    const minutes = diffMinutes % 60;
+    return `${hours} ชม. ${minutes} นาที`;
   };
 
   const fetchData = useCallback((options?: { forceReplaceRequests?: boolean }) => {
@@ -403,59 +426,31 @@ const App: React.FC = () => {
 
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN;
 
-  const NavIcon: React.FC<{ variant: 'home' | 'clock' | 'history' | 'chart' | 'settings'; active: boolean }> = ({ variant, active }) => {
+  const NavIcon: React.FC<{ variant: 'home' | 'clock' | 'history' | 'receipt' | 'chart' | 'settings'; active: boolean }> = ({ variant, active }) => {
     const base = 'w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 transition';
     const palette: Record<typeof variant, { bg: string; fg: string; bgActive: string; fgActive: string }> = {
       home: { bg: 'bg-sky-50', fg: 'text-sky-600', bgActive: 'bg-sky-100', fgActive: 'text-sky-700' },
       clock: { bg: 'bg-emerald-50', fg: 'text-emerald-600', bgActive: 'bg-emerald-100', fgActive: 'text-emerald-700' },
       history: { bg: 'bg-amber-50', fg: 'text-amber-600', bgActive: 'bg-amber-100', fgActive: 'text-amber-700' },
+      receipt: { bg: 'bg-cyan-50', fg: 'text-cyan-600', bgActive: 'bg-cyan-100', fgActive: 'text-cyan-700' },
       chart: { bg: 'bg-violet-50', fg: 'text-violet-600', bgActive: 'bg-violet-100', fgActive: 'text-violet-700' },
       settings: { bg: 'bg-rose-50', fg: 'text-rose-600', bgActive: 'bg-rose-100', fgActive: 'text-rose-700' },
     };
     const p = palette[variant];
     const cls = `${base} ${active ? p.bgActive : p.bg} ${active ? p.fgActive : p.fg}`;
     const iconCls = 'w-5 h-5';
-    if (variant === 'home') {
-      return (
-        <div className={cls} aria-hidden="true">
-          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 3.172a2 2 0 0 1 1.238.43l7 5.6a1 1 0 0 1-1.25 1.562L19 10.552V19a2 2 0 0 1-2 2h-3.5a.5.5 0 0 1-.5-.5v-5.25a1.25 1.25 0 0 0-2.5 0V20.5a.5.5 0 0 1-.5.5H7a2 2 0 0 1-2-2v-8.448l-.988.79A1 1 0 1 1 2.762 9.2l7-5.6A2 2 0 0 1 12 3.172Z" />
-          </svg>
-        </div>
-      );
-    }
-    if (variant === 'clock') {
-      return (
-        <div className={cls} aria-hidden="true">
-          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2.75a9.25 9.25 0 1 0 0 18.5 9.25 9.25 0 0 0 0-18.5Zm0 1.5a7.75 7.75 0 1 1 0 15.5 7.75 7.75 0 0 1 0-15.5Zm-.25 3a.75.75 0 0 1 .75.75v4.28l3.22 1.86a.75.75 0 1 1-.75 1.3l-3.6-2.08a.75.75 0 0 1-.37-.65V8a.75.75 0 0 1 .75-.75Z" />
-          </svg>
-        </div>
-      );
-    }
-    if (variant === 'history') {
-      return (
-        <div className={cls} aria-hidden="true">
-          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 4.25a7.75 7.75 0 1 0 7.75 7.75.75.75 0 0 1 1.5 0 9.25 9.25 0 1 1-3.02-6.86V3a.75.75 0 0 1 1.5 0v4.5a.75.75 0 0 1-.75.75H14a.75.75 0 0 1 0-1.5h2.62A7.72 7.72 0 0 0 12 4.25Zm-.25 3a.75.75 0 0 1 .75.75v4.19l2.9 1.68a.75.75 0 1 1-.75 1.3l-3.28-1.9a.75.75 0 0 1-.37-.65V8a.75.75 0 0 1 .75-.75Z" />
-          </svg>
-        </div>
-      );
-    }
-    if (variant === 'chart') {
-      return (
-        <div className={cls} aria-hidden="true">
-          <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4.75 20a.75.75 0 0 1-.75-.75V5a.75.75 0 0 1 1.5 0v13.5H20a.75.75 0 0 1 0 1.5H4.75Zm3-2.25a.75.75 0 0 1-.75-.75v-6a.75.75 0 0 1 1.5 0v6a.75.75 0 0 1-.75.75Zm4 0a.75.75 0 0 1-.75-.75V8a.75.75 0 0 1 1.5 0v9a.75.75 0 0 1-.75.75Zm4 0a.75.75 0 0 1-.75-.75v-4a.75.75 0 0 1 1.5 0v4a.75.75 0 0 1-.75.75Z" />
-          </svg>
-        </div>
-      );
-    }
+    const iconMap: Record<typeof variant, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
+      home: Home,
+      clock: Clock3,
+      history: History,
+      receipt: ReceiptText,
+      chart: BarChart3,
+      settings: Settings2,
+    };
+    const Icon = iconMap[variant];
     return (
       <div className={cls} aria-hidden="true">
-        <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm0 1.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Zm8.25 2.25a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-.54.72l-1.35.4a7.9 7.9 0 0 1-.72 1.73l.7 1.23a.75.75 0 0 1-.11.9l-.35.35a.75.75 0 0 1-.9.11l-1.23-.7a7.9 7.9 0 0 1-1.73.72l-.4 1.35a.75.75 0 0 1-.72.54h-.5a.75.75 0 0 1-.72-.54l-.4-1.35a7.9 7.9 0 0 1-1.73-.72l-1.23.7a.75.75 0 0 1-.9-.11l-.35-.35a.75.75 0 0 1-.11-.9l.7-1.23a7.9 7.9 0 0 1-.72-1.73l-1.35-.4A.75.75 0 0 1 3 13.25v-.5a.75.75 0 0 1 .54-.72l1.35-.4a7.9 7.9 0 0 1 .72-1.73l-.7-1.23a.75.75 0 0 1 .11-.9l.35-.35a.75.75 0 0 1 .9-.11l1.23.7a7.9 7.9 0 0 1 1.73-.72l.4-1.35A.75.75 0 0 1 11.75 3h.5a.75.75 0 0 1 .72.54l.4 1.35a7.9 7.9 0 0 1 1.73.72l1.23-.7a.75.75 0 0 1 .9.11l.35.35a.75.75 0 0 1 .11.9l-.7 1.23a7.9 7.9 0 0 1 .72 1.73l1.35.4a.75.75 0 0 1 .54.72v.5a.75.75 0 0 1-.75.75Z" />
-        </svg>
+        <Icon className={iconCls} strokeWidth={2.2} />
       </div>
     );
   };
@@ -497,7 +492,7 @@ const App: React.FC = () => {
               onClick={() => setActiveTab('expense')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${activeTab === 'expense' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
             >
-              <NavIcon variant="chart" active={activeTab === 'expense'} />
+              <NavIcon variant="receipt" active={activeTab === 'expense'} />
               เบิกค่าใช้จ่าย
             </button>
             {isManagerOrAdmin && (
@@ -623,7 +618,7 @@ const App: React.FC = () => {
               )}
 
               {isManagerOrAdmin && (
-                <ApprovalBoard requests={approvalBoardRequests} currentUserId={currentUser.id} onUpdate={fetchData} />
+                <PendingApprovalsBoard leaveRequests={approvalBoardRequests} currentUser={currentUser} onUpdate={fetchData} />
               )}
 
               <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
@@ -761,6 +756,7 @@ const App: React.FC = () => {
                         <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">วันที่</th>
                         <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">เวลาเข้า (IN)</th>
                         <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">เวลาออก (OUT)</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">ชั่วโมงทำงาน</th>
                         <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">สถานะ</th>
                       </tr>
                     </thead>
@@ -773,10 +769,13 @@ const App: React.FC = () => {
                             </p>
                           </td>
                           <td className={`px-6 py-4 text-center font-black text-sm ${rec.isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
-                            {rec.checkIn || '-'}
+                            {formatTimeAsHm(rec.checkIn)}
                           </td>
                           <td className="px-6 py-4 text-center font-bold text-gray-900 text-sm">
-                            {rec.checkOut || '-'}
+                            {formatTimeAsHm(rec.checkOut)}
+                          </td>
+                          <td className="px-6 py-4 text-center font-bold text-gray-800 text-sm">
+                            {calculateWorkedHours(rec)}
                           </td>
                           <td className="px-6 py-4 text-right">
                             {rec.isLate ? (

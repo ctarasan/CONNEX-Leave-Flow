@@ -4,6 +4,7 @@ import { User, LeaveRequest, AttendanceRecord, LeaveStatus } from '../types';
 import { calculateLatePenaltyDays, getAttendanceLatePolicy, getLeaveRequests, getAttendanceRecords, getLeaveTypes } from '../store';
 import { HOLIDAYS_2026 } from '../constants';
 import { formatYmdAsDdMmBe } from '../utils';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 interface VacationLedgerProps {
   user: User;
@@ -76,6 +77,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
   }, [user.id]);
 
   const totalDeducted = useMemo(() => ledgerEntries.reduce((sum, e) => sum + e.amount, 0), [ledgerEntries]);
+  const ledgerPagination = useTablePagination(ledgerEntries);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -110,7 +112,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {ledgerEntries.map(entry => (
+              {ledgerPagination.pagedItems.map(entry => (
                 <tr key={entry.id} className="hover:bg-gray-50 transition">
                   <td className="px-6 py-4 font-bold text-gray-700 text-sm">
                     {formatYmdAsDdMmBe(entry.date)}
@@ -140,6 +142,18 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-6 pb-4">
+          <TablePagination
+            page={ledgerPagination.page}
+            pageSize={ledgerPagination.pageSize}
+            totalItems={ledgerPagination.totalItems}
+            totalPages={ledgerPagination.totalPages}
+            rangeStart={ledgerPagination.rangeStart}
+            rangeEnd={ledgerPagination.rangeEnd}
+            onPageChange={ledgerPagination.setPage}
+            onPageSizeChange={ledgerPagination.setPageSize}
+          />
         </div>
       </div>
       

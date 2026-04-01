@@ -5,6 +5,7 @@ import { HOLIDAYS_2026 } from '../constants';
 import { getAllUsers, getLeaveTypes, getSubordinateIdSetRecursive, getLeaveRequests, getSubordinateIdsRecursive, loadLeaveRequestsForManager, getAttendanceRecords, loadAttendanceForUser, getLateThresholdTime } from '../store';
 import { isApiMode } from '../api';
 import { formatThaiMonthYear, formatYmdAsDdMmBe, toBuddhistYear, THAI_MONTHS_FULL, currentCEYear } from '../utils';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 interface ReportSummaryProps {
   requests: LeaveRequest[];
@@ -279,6 +280,8 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
       return b.lateCount - a.lateCount;
     });
   }, [filteredRequests, leaveTypes, currentUser, reportScope, reportYear, reportMonth, users, attendanceReloadTick]);
+  const pivotPagination = useTablePagination(pivotData);
+  const historyPagination = useTablePagination(historyTableRequests);
 
   const calendarData = useMemo(() => {
     const year = calendarYear;
@@ -287,6 +290,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
       return { days: [], label: '' };
     }
 
+    const firstOfMonth = new Date(year, month - 1, 1);
     const monthLabel = formatThaiMonthYear(`${year}-${String(month).padStart(2, '0')}`);
 
     // Map วันที่ -> รายการลาที่ครอบคลุมวันนั้น (ใช้ local date เพื่อแก้ปัญหา timezone)
@@ -557,7 +561,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {pivotData.map((row) => {
+                {pivotPagination.pagedItems.map((row) => {
                   const totalLeave = leaveTypes.reduce((sum, lt) => sum + (row.byType[lt.id] || 0), 0);
                   const total = totalLeave;
                   return (
@@ -583,6 +587,16 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
             </table>
           </div>
         )}
+        <TablePagination
+          page={pivotPagination.page}
+          pageSize={pivotPagination.pageSize}
+          totalItems={pivotPagination.totalItems}
+          totalPages={pivotPagination.totalPages}
+          rangeStart={pivotPagination.rangeStart}
+          rangeEnd={pivotPagination.rangeEnd}
+          onPageChange={pivotPagination.setPage}
+          onPageSizeChange={pivotPagination.setPageSize}
+        />
       </div>
 
       <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100">
@@ -714,7 +728,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {historyTableRequests.map((r) => {
+                {historyPagination.pagedItems.map((r) => {
                   const days = calculateBusinessDaysRange(r.startDate, r.endDate);
                   return (
                   <tr key={r.id} className="hover:bg-gray-50 transition">
@@ -750,6 +764,18 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
               </tbody>
             </table>
           </div>
+        )}
+        {historyViewMode === 'list' && (
+          <TablePagination
+            page={historyPagination.page}
+            pageSize={historyPagination.pageSize}
+            totalItems={historyPagination.totalItems}
+            totalPages={historyPagination.totalPages}
+            rangeStart={historyPagination.rangeStart}
+            rangeEnd={historyPagination.rangeEnd}
+            onPageChange={historyPagination.setPage}
+            onPageSizeChange={historyPagination.setPageSize}
+          />
         )}
         {historyViewMode === 'calendar' && (
           <div className="mt-4 rounded-3xl border border-gray-100 p-4">

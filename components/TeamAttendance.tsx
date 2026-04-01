@@ -4,7 +4,8 @@ import { User, UserRole } from '../types';
 import { calculateLatePenaltyDays, getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
 import { isApiMode } from '../api';
 import DatePicker from './DatePicker';
-import { formatYmdAsDdMmBe } from '../utils';
+import { formatYmdAsDdMmBe, formatTimeAsHm } from '../utils';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 interface TeamAttendanceProps {
   manager: User;
@@ -77,6 +78,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
       return true;
     });
   }, [teamRecords, nameQuery, startDate, endDate]);
+  const attendancePagination = useTablePagination(filteredRecords);
 
   return (
     <div className="bg-white rounded-[32px] shadow-sm border border-gray-200 overflow-hidden">
@@ -154,7 +156,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredRecords.map((rec) => {
+            {attendancePagination.pagedItems.map((rec) => {
               let hoursText = '-';
               if (rec.checkIn && rec.checkOut) {
                 const start = new Date(`${rec.date}T${rec.checkIn}`);
@@ -179,10 +181,10 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                       rec.isLate ? 'text-rose-600' : 'text-emerald-600'
                     }`}
                   >
-                    {rec.checkIn || '-'}
+                    {formatTimeAsHm(rec.checkIn)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-900 text-sm">
-                    {rec.checkOut || '-'}
+                    {formatTimeAsHm(rec.checkOut)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-800 text-sm">
                     {hoursText}
@@ -218,6 +220,16 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             )}
           </tbody>
         </table>
+        <TablePagination
+          page={attendancePagination.page}
+          pageSize={attendancePagination.pageSize}
+          totalItems={attendancePagination.totalItems}
+          totalPages={attendancePagination.totalPages}
+          rangeStart={attendancePagination.rangeStart}
+          rangeEnd={attendancePagination.rangeEnd}
+          onPageChange={attendancePagination.setPage}
+          onPageSizeChange={attendancePagination.setPageSize}
+        />
         {isLoading && (
           <div className="px-6 py-4 text-center text-gray-500 text-xs font-bold">
             กำลังโหลดข้อมูลการเข้างานของทีม...

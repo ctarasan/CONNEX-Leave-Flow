@@ -2,6 +2,7 @@
 import React from 'react';
 import { Notification } from '../types';
 import { markNotifAsRead } from '../store';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface NotificationCenterProps {
   notifications: Notification[];
@@ -10,9 +11,12 @@ interface NotificationCenterProps {
 }
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, userId, onUpdate }) => {
+  const { runAction, isActionBusy } = useAsyncAction();
   const handleRead = (id: string) => {
-    markNotifAsRead(id, userId);
-    onUpdate();
+    runAction(`read-notif-${id}`, async () => {
+      await Promise.resolve(markNotifAsRead(id, userId));
+      onUpdate();
+    });
   };
 
   return (
@@ -31,8 +35,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
           {notifications.map(notif => (
             <div 
               key={notif.id} 
-              className={`p-3 rounded-lg border transition-all ${notif.isRead ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-blue-50 border-blue-100 shadow-sm'}`}
+              role="button"
+              tabIndex={0}
+              aria-busy={isActionBusy(`read-notif-${notif.id}`)}
+              className={`p-3 rounded-lg border transition-all ${notif.isRead ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-blue-50 border-blue-100 shadow-sm'} ${isActionBusy(`read-notif-${notif.id}`) ? 'pointer-events-none opacity-60' : ''}`}
               onClick={() => handleRead(notif.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleRead(notif.id);
+                }
+              }}
             >
               <div className="flex justify-between">
                 <h4 className="font-semibold text-sm text-gray-900">{notif.title}</h4>

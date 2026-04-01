@@ -11,6 +11,8 @@ interface DatePickerProps {
   placeholder?: string;
   /** default = ช่องใหญ่, compact = ตาราง/ตัวกรอง */
   size?: 'default' | 'compact';
+  /** true = ปิดเลือกเสาร์/อาทิตย์/วันหยุด, false = เลือกได้ */
+  disableHolidayWeekend?: boolean;
 }
 
 type ViewMode = 'calendar' | 'year' | 'month';
@@ -23,6 +25,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
   maxDate,
   placeholder = 'วว/ดด/ปปปป',
   size = 'default',
+  disableHolidayWeekend = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => value ? new Date(value) : new Date());
@@ -104,16 +107,18 @@ const DatePicker: React.FC<DatePickerProps> = ({
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
       const holidayName = HOLIDAYS_2026[dateStr];
       const isHoliday = !!holidayName;
-      const isDisabled = !!(isPast || isAfterMax || isWeekend || isHoliday);
+      const isDisabled = disableHolidayWeekend
+        ? !!(isPast || isAfterMax || isWeekend || isHoliday)
+        : !!(isPast || isAfterMax);
 
       let cellClass = 'h-10 w-full flex items-center justify-center rounded-xl text-sm font-bold transition relative ';
       if (isSelected) {
         cellClass += 'bg-blue-600 text-white shadow-lg shadow-blue-200';
       } else if (isDisabled && (isPast || isAfterMax)) {
         cellClass += 'text-gray-200 cursor-not-allowed';
-      } else if (isHoliday) {
+      } else if (disableHolidayWeekend && isHoliday) {
         cellClass += 'bg-amber-50 text-amber-400 cursor-not-allowed border border-amber-200';
-      } else if (isWeekend) {
+      } else if (disableHolidayWeekend && isWeekend) {
         cellClass += 'text-rose-300 cursor-not-allowed';
       } else if (isToday) {
         cellClass += 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100';
@@ -231,7 +236,9 @@ const DatePicker: React.FC<DatePickerProps> = ({
           const todayDow = todayDate.getDay();
           const todayIsWeekend = todayDow === 0 || todayDow === 6;
           const todayIsHoliday = !!HOLIDAYS_2026[todayStr];
-          const todayDisabled = todayIsWeekend || todayIsHoliday || (minDate && todayStr < minDate) || (maxDate && todayStr > maxDate);
+          const todayDisabled = disableHolidayWeekend
+            ? (todayIsWeekend || todayIsHoliday || (minDate && todayStr < minDate) || (maxDate && todayStr > maxDate))
+            : ((minDate && todayStr < minDate) || (maxDate && todayStr > maxDate));
           return (
             <div className="flex justify-center">
               <button

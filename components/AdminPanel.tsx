@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition, ExpenseTypeDefinition } from '../types';
-import { AttendanceLatePolicy, getAllUsers, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, resetAllData, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
+import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
-import { deleteExpenseType, getExpenseTypes, postExpenseType } from '../api';
+import { deleteExpenseType, getExpenseTypes, isApiMode, postExpenseType } from '../api';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import TablePagination, { useTablePagination } from './TablePagination';
 
 function businessDays(startStr: string, endStr: string, holidays: Record<string, string>): number {
   const start = new Date(startStr);
@@ -37,6 +39,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) => {
   const { showAlert, showConfirm } = useAlert();
+  const { runAction, isActionBusy } = useAsyncAction();
   const [activeSubTab, setActiveSubTab] = useState<'employees' | 'leavetypes' | 'holidays' | 'projects' | 'expensetypes'>('projects');
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -105,7 +108,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const refreshTimesheetProjects = () => setTimesheetProjects(getTimesheetProjects());
   const refreshTaskTypes = () => setTaskTypes(getTimesheetTaskTypes());
   const refreshExpenseTypes = () => {
-    getExpenseTypes().then((rows) => {
+    return getExpenseTypes().then((rows) => {
       setExpenseTypes(rows.map((x) => ({
         id: String(x.id ?? ''),
         label: String(x.label ?? ''),
@@ -125,21 +128,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   }, [users]);
 
   const handleSaveLatePolicy = () => {
-    const normalized: AttendanceLatePolicy = {
-      tiers: latePolicy.tiers
-        .map(t => ({
-          after: (t.after || '').trim(),
-          penalty: Math.min(12, Math.max(0, Number(t.penalty) || 0)),
-        }))
-        .filter(t => !!t.after),
-    };
-    if (normalized.tiers.length === 0) {
-      showAlert('ต้องมีกติกาอย่างน้อย 1 ช่วงเวลา');
-      return;
-    }
-    saveAttendanceLatePolicy(normalized);
-    setLatePolicy(getAttendanceLatePolicy());
-    showAlert('บันทึกกติกาหักลาพักร้อนกรณีมาสายเรียบร้อยแล้ว');
+    runAction('admin-save-late-policy', async () => {
+      const normalized: AttendanceLatePolicy = {
+        tiers: latePolicy.tiers
+          .map(t => ({
+            after: (t.after || '').trim(),
+            penalty: Math.min(12, Math.max(0, Number(t.penalty) || 0)),
+          }))
+          .filter(t => !!t.after),
+      };
+      if (normalized.tiers.length === 0) {
+        showAlert('ต้องมีกติกาอย่างน้อย 1 ช่วงเวลา');
+        return;
+      }
+      await Promise.resolve(saveAttendanceLatePolicy(normalized));
+      setLatePolicy(getAttendanceLatePolicy());
+      showAlert('บันทึกกติกาหักลาพักร้อนกรณีมาสายเรียบร้อยแล้ว');
+    });
   };
 
   const handleAddLateTier = () => {
@@ -180,129 +185,142 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
 
   const handleSave = () => {
     if (!editingUser) return;
-    const toSave: User = {
-      ...editingUser,
-      name: editingUser.name.trim(),
-      email: editingUser.email.trim(),
-      position: editingUser.position.trim(),
-      department: editingUser.department.trim(),
-      password: editPassword.trim() || editingUser.password,
-    };
-    const result = updateUser(toSave);
-    const onDone = () => {
-      refreshUsers();
-      setEditingUser(null);
-      setEditPassword('');
-      showAlert('บันทึกข้อมูลพนักงานเรียบร้อยแล้ว');
-    };
-    if (result != null && typeof (result as Promise<void>).then === 'function') {
-      (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถอัปเดตข้อมูลได้ กรุณาลองใหม่'));
-    } else {
-      onDone();
-    }
+    runAction('admin-save-user', async () => {
+      const toSave: User = {
+        ...editingUser,
+        name: editingUser.name.trim(),
+        email: editingUser.email.trim(),
+        position: editingUser.position.trim(),
+        department: editingUser.department.trim(),
+        password: editPassword.trim() || editingUser.password,
+      };
+      try {
+        const result = updateUser(toSave);
+        if (result != null && typeof (result as Promise<void>).then === 'function') {
+          await (result as Promise<void>);
+        }
+        refreshUsers();
+        setEditingUser(null);
+        setEditPassword('');
+        showAlert('บันทึกข้อมูลพนักงานเรียบร้อยแล้ว');
+      } catch {
+        showAlert('ไม่สามารถอัปเดตข้อมูลได้ กรุณาลองใหม่');
+      }
+    });
   };
 
   const handleAddEmployee = (e: React.FormEvent) => {
     e.preventDefault();
-    const name = newName.trim();
-    const email = newEmail.trim();
-    const password = newPassword.trim();
-    const position = newPosition.trim();
-    const department = newDepartment.trim();
-    if (!name || !email || !password || !position || !department || !newJoinDate) {
-      showAlert('กรุณากรอกชื่อ อีเมล รหัสผ่าน ตำแหน่ง แผนก และวันเริ่มงาน');
-      return;
-    }
-    if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-      showAlert('อีเมลนี้มีในระบบแล้ว');
-      return;
-    }
-    const created = addUser({
-      name,
-      email,
-      password,
-      role: newRole,
-      gender: newGender,
-      position,
-      department,
-      joinDate: newJoinDate,
-      managerId: newManagerId || undefined,
-      quotas: {},
-    });
-    // Optimistic UI: show newly added employee immediately.
-    setUsers((prev) => {
-      const idx = prev.findIndex((u) => u.id === created.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = created;
-        return next;
+    runAction('admin-add-employee', async () => {
+      const name = newName.trim();
+      const email = newEmail.trim();
+      const password = newPassword.trim();
+      const position = newPosition.trim();
+      const department = newDepartment.trim();
+      if (!name || !email || !password || !position || !department || !newJoinDate) {
+        showAlert('กรุณากรอกชื่อ อีเมล รหัสผ่าน ตำแหน่ง แผนก และวันเริ่มงาน');
+        return;
       }
-      return [...prev, created];
+      if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+        showAlert('อีเมลนี้มีในระบบแล้ว');
+        return;
+      }
+      const createdMaybe = addUser({
+        name,
+        email,
+        password,
+        role: newRole,
+        gender: newGender,
+        position,
+        department,
+        joinDate: newJoinDate,
+        managerId: newManagerId || undefined,
+        quotas: {},
+      }) as unknown;
+      const created = createdMaybe != null && typeof (createdMaybe as Promise<User>).then === 'function'
+        ? await (createdMaybe as Promise<User>)
+        : createdMaybe as User;
+      if (created?.id) {
+        setUsers((prev) => {
+          const idx = prev.findIndex((u) => u.id === created.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = created;
+            return next;
+          }
+          return [...prev, created];
+        });
+      }
+      refreshUsers();
+      setShowAddModal(false);
+      setNewName('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole(UserRole.EMPLOYEE);
+      setNewGender('male');
+      setNewPosition('');
+      setNewDepartment('');
+      setNewJoinDate('');
+      setNewManagerId('');
+      showAlert('เพิ่มพนักงานใหม่เรียบร้อยแล้ว');
     });
-    refreshUsers();
-    setShowAddModal(false);
-    setNewName('');
-    setNewEmail('');
-    setNewPassword('');
-    setNewRole(UserRole.EMPLOYEE);
-    setNewGender('male');
-    setNewPosition('');
-    setNewDepartment('');
-    setNewJoinDate('');
-    setNewManagerId('');
-    showAlert('เพิ่มพนักงานใหม่เรียบร้อยแล้ว');
   };
 
   const refreshLeaveTypes = () => setLeaveTypes(getLeaveTypes());
 
   const handleSaveLeaveType = () => {
     if (!editingLeaveType) return;
-    const result = updateLeaveType(editingLeaveType.id, {
-      label: editingLeaveType.label.trim(),
-      applicableTo: editingLeaveType.applicableTo,
-      defaultQuota: Math.max(0, Math.floor(Number(editingLeaveType.defaultQuota)) || 0),
+    runAction('admin-save-leave-type', async () => {
+      try {
+        const result = updateLeaveType(editingLeaveType.id, {
+          label: editingLeaveType.label.trim(),
+          applicableTo: editingLeaveType.applicableTo,
+          defaultQuota: Math.max(0, Math.floor(Number(editingLeaveType.defaultQuota)) || 0),
+        });
+        if (result != null && typeof (result as Promise<void>).then === 'function') {
+          await (result as Promise<void>);
+        }
+        refreshLeaveTypes();
+        setEditingLeaveType(null);
+        showAlert('บันทึกประเภทวันลาเรียบร้อยแล้ว');
+      } catch {
+        showAlert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
+      }
     });
-    const onDone = () => {
-      refreshLeaveTypes();
-      setEditingLeaveType(null);
-      showAlert('บันทึกประเภทวันลาเรียบร้อยแล้ว');
-    };
-    if (result != null && typeof (result as Promise<void>).then === 'function') {
-      (result as Promise<void>).then(onDone).catch(() => showAlert('ไม่สามารถบันทึกได้ กรุณาลองใหม่'));
-    } else {
-      onDone();
-    }
   };
 
   const handleAddLeaveType = (e: React.FormEvent) => {
     e.preventDefault();
-    const label = newLTLabel.trim();
-    if (!label) return;
-    const quota = Math.max(0, Math.floor(Number(newLTQuota)) || 0);
-    const result = addLeaveType({ label, applicableTo: newLTApplicable, defaultQuota: quota, isActive: true });
-    const onDone = () => {
-      refreshLeaveTypes();
-      setShowAddLeaveType(false);
-      setNewLTLabel('');
-      setNewLTApplicable('both');
-      setNewLTQuota('0');
-      showAlert('เพิ่มประเภทวันลาเรียบร้อยแล้ว');
-    };
-    if (result != null && typeof (result as Promise<LeaveTypeDefinition>).then === 'function') {
-      (result as Promise<LeaveTypeDefinition>).then(onDone).catch(() => showAlert('ไม่สามารถเพิ่มได้ กรุณาลองใหม่'));
-    } else {
-      onDone();
-    }
+    runAction('admin-add-leave-type', async () => {
+      const label = newLTLabel.trim();
+      if (!label) return;
+      const quota = Math.max(0, Math.floor(Number(newLTQuota)) || 0);
+      try {
+        const result = addLeaveType({ label, applicableTo: newLTApplicable, defaultQuota: quota, isActive: true });
+        if (result != null && typeof (result as Promise<LeaveTypeDefinition>).then === 'function') {
+          await (result as Promise<LeaveTypeDefinition>);
+        }
+        refreshLeaveTypes();
+        setShowAddLeaveType(false);
+        setNewLTLabel('');
+        setNewLTApplicable('both');
+        setNewLTQuota('0');
+        showAlert('เพิ่มประเภทวันลาเรียบร้อยแล้ว');
+      } catch {
+        showAlert('ไม่สามารถเพิ่มได้ กรุณาลองใหม่');
+      }
+    });
   };
 
   const handleDeleteLeaveType = (lt: LeaveTypeDefinition) => {
     if (!window.confirm(`ปิดใช้ประเภท "${lt.label}" หรือไม่?\n(พนักงานจะไม่เห็นตัวเลือกนี้)`)) return;
-    const result = deleteLeaveType(lt.id);
-    if (result != null && typeof (result as Promise<void>).then === 'function') {
-      (result as Promise<void>).then(() => refreshLeaveTypes()).catch(() => {});
-    } else {
+    runAction(`admin-delete-leave-type-${lt.id}`, async () => {
+      const result = deleteLeaveType(lt.id);
+      if (result != null && typeof (result as Promise<void>).then === 'function') {
+        await (result as Promise<void>);
+      }
       refreshLeaveTypes();
-    }
+    });
   };
 
   const handleDeleteEmployee = (user: User) => {
@@ -313,10 +331,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     showConfirm(
       `ต้องการลบพนักงาน "${user.name}" ออกจากระบบหรือไม่?\n(ใช้เมื่อพนักงานลาออก)`,
       () => {
-        // Optimistic UI: remove row immediately
-        setUsers((prev) => prev.filter((u) => u.id !== user.id));
-        const result = deleteUser(user.id);
-        const onDone = (ok: boolean) => {
+        runAction(`admin-delete-user-${user.id}`, async () => {
+          setUsers((prev) => prev.filter((u) => u.id !== user.id));
+          const result = deleteUser(user.id);
+          let ok = result === true;
+          if (result != null && typeof (result as Promise<boolean>).then === 'function') {
+            try {
+              ok = await (result as Promise<boolean>);
+            } catch {
+              ok = false;
+            }
+          }
           if (!ok) {
             refreshUsers();
             showAlert('ไม่สามารถลบข้อมูลพนักงานได้ กรุณาลองใหม่');
@@ -325,56 +350,102 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           refreshUsers();
           onUserDeleted?.(user.id);
           showAlert('ลบข้อมูลพนักงานเรียบร้อยแล้ว');
-        };
-        if (result != null && typeof (result as Promise<boolean>).then === 'function') {
-          (result as Promise<boolean>).then(onDone).catch(() => onDone(false));
-        } else {
-          onDone(result === true);
-        }
+        });
       }
     );
   };
 
-  const handleResetAllData = () => {
-    if (!window.confirm('ต้องการลบข้อมูลเดิมทั้งหมดและโหลดข้อมูลตั้งต้น (รายชื่อ 20 คน) ใหม่หรือไม่?\n\nคุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่')) return;
-    resetAllData();
-    window.location.reload();
+  const handleProcessVacationQuota = () => {
+    const processYear = new Date().getFullYear();
+    const beYear = processYear + 543;
+    showConfirm(
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: quota_start_after_late = quota_${processYear} - late_penalty`,
+      () => {
+        runAction('admin-process-vacation-quota', async () => {
+          if (isApiMode()) {
+            await Promise.all(users.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
+          }
+
+          const jan1 = new Date(processYear, 0, 1, 12, 0, 0);
+          const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
+          const updatedUsers: User[] = [];
+
+          for (const user of users) {
+            const join = new Date(`${String(user.joinDate).slice(0, 10)}T12:00:00`);
+            const firstAnniv = new Date(join);
+            firstAnniv.setFullYear(firstAnniv.getFullYear() + 1);
+
+            let quotaYear = 0;
+            if (firstAnniv <= jan1) quotaYear = 12;
+            else if (firstAnniv > dec31) quotaYear = 0;
+            else quotaYear = 13 - (firstAnniv.getMonth() + 1);
+
+            const latePenalty = getAttendanceRecords(user.id)
+              .filter((r) => String(r.date || '').startsWith(`${processYear}-`) && !!r.checkIn)
+              .reduce((sum, r) => sum + calculateLatePenaltyDays(r.checkIn), 0);
+
+            const quotaStartAfterLate = Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
+            const nextUser: User = {
+              ...user,
+              quotas: {
+                ...user.quotas,
+                VACATION: quotaStartAfterLate,
+              },
+            };
+            const result = updateUser(nextUser);
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              await (result as Promise<void>);
+            }
+            updatedUsers.push(nextUser);
+          }
+
+          setUsers(updatedUsers);
+          refreshUsers();
+          showAlert(`ประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} เรียบร้อยแล้ว (${updatedUsers.length} คน)`);
+        });
+      }
+    );
   };
 
   const handleAddHoliday = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHolidayDate || !newHolidayName) return;
-    console.log('🔵 [AdminPanel] กำลังเพิ่มวันหยุด:', { date: newHolidayDate, name: newHolidayName });
-    const result = saveHoliday(newHolidayDate, newHolidayName);
-    const promise = result && typeof (result as Promise<void>).then === 'function' ? (result as Promise<void>) : null;
-    if (promise) {
-      console.log('🟢 [AdminPanel] ใช้โหมด API (Promise)');
-      promise
-        .then(() => {
-          console.log('✅ [AdminPanel] API สำเร็จ, รีเฟรช holidays');
-          setHolidays(getHolidays());
-        })
-        .catch((err) => {
-          console.error('❌ [AdminPanel] API ล้มเหลว:', err);
-        });
-    } else {
-      console.log('🟡 [AdminPanel] ใช้โหมด localStorage');
+    runAction('admin-add-holiday', async () => {
+      if (!newHolidayDate || !newHolidayName) return;
+      const result = saveHoliday(newHolidayDate, newHolidayName);
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        await (result as Promise<void>);
+      }
       setHolidays(getHolidays());
-    }
-    setNewHolidayDate('');
-    setNewHolidayName('');
+      setNewHolidayDate('');
+      setNewHolidayName('');
+    });
   };
 
   const handleDeleteHoliday = (date: string) => {
     if (window.confirm(`ต้องการลบวันหยุดวันที่ ${date} หรือไม่?`)) {
-      const result = deleteHoliday(date);
-      const promise = result && typeof (result as Promise<void>).then === 'function' ? (result as Promise<void>) : null;
-      if (promise) promise.then(() => setHolidays(getHolidays()));
-      else setHolidays(getHolidays());
+      runAction(`admin-delete-holiday-${date}`, async () => {
+        const result = deleteHoliday(date);
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          await (result as Promise<void>);
+        }
+        setHolidays(getHolidays());
+      });
     }
   };
 
   const sortedHolidayDates = Object.keys(holidays).sort();
+  const activeProjects = useMemo(
+    () => timesheetProjects.filter((p) => p.isActive),
+    [timesheetProjects]
+  );
+  const activeLeaveTypes = useMemo(
+    () => leaveTypes.filter((t) => t.isActive).sort((a, b) => a.order - b.order),
+    [leaveTypes]
+  );
+  const projectPagination = useTablePagination(activeProjects);
+  const employeePagination = useTablePagination(users);
+  const leaveTypePagination = useTablePagination(activeLeaveTypes);
+  const holidayPagination = useTablePagination(sortedHolidayDates);
   const resetProjectForm = () => {
     setEditProject(null);
     setProjCode('');
@@ -406,18 +477,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       showAlert('Project Manager ต้องเป็นระดับ Manager หรือ Admin');
       return;
     }
-    upsertTimesheetProject({
-      id: editProject?.id ?? `P-${Date.now()}`,
-      code: projCode.trim().toUpperCase(),
-      name: projName.trim(),
-      taskTargetDays: taskTargets,
-      assignedUserIds: assignedIds,
-      projectManagerId: projManagerId,
-      isActive: true,
+    runAction('admin-save-project', async () => {
+      await Promise.resolve(upsertTimesheetProject({
+        id: editProject?.id ?? `P-${Date.now()}`,
+        code: projCode.trim().toUpperCase(),
+        name: projName.trim(),
+        taskTargetDays: taskTargets,
+        assignedUserIds: assignedIds,
+        projectManagerId: projManagerId,
+        isActive: true,
+      }));
+      refreshTimesheetProjects();
+      resetProjectForm();
+      showAlert('บันทึกข้อมูลโครงการเรียบร้อยแล้ว');
     });
-    refreshTimesheetProjects();
-    resetProjectForm();
-    showAlert('บันทึกข้อมูลโครงการเรียบร้อยแล้ว');
   };
 
   const handleAddTaskType = () => {
@@ -426,12 +499,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       showAlert('กรุณาระบุชื่อ Task');
       return;
     }
-    const id = `task-${Date.now()}`;
-    const next = [...taskTypes, { id, label, order: taskTypes.length + 1, isActive: true }];
-    saveTimesheetTaskTypes(next);
-    setTaskTypes(getTimesheetTaskTypes());
-    setTaskTargets((prev) => ({ ...prev, [id]: 0 }));
-    setNewTaskLabel('');
+    runAction('admin-add-task-type', async () => {
+      const id = `task-${Date.now()}`;
+      const next = [...taskTypes, { id, label, order: taskTypes.length + 1, isActive: true }];
+      await Promise.resolve(saveTimesheetTaskTypes(next));
+      setTaskTypes(getTimesheetTaskTypes());
+      setTaskTargets((prev) => ({ ...prev, [id]: 0 }));
+      setNewTaskLabel('');
+    });
   };
 
   const handleTaskLabelChange = (id: string, label: string) => {
@@ -470,7 +545,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               จัดการวันหยุดบริษัท
             </button>
             <button
-              onClick={() => { setActiveSubTab('expensetypes'); refreshExpenseTypes(); }}
+              onClick={() => {
+                setActiveSubTab('expensetypes');
+                runAction('admin-refresh-expense-types', async () => refreshExpenseTypes());
+              }}
+              aria-busy={isActionBusy('admin-refresh-expense-types')}
               className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'expensetypes' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
               ประเภทค่าใช้จ่าย
@@ -553,7 +632,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 ))}
               </div>
               <div className="flex gap-2">
-                <button onClick={handleSaveProject} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black">{editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}</button>
+                <button
+                  onClick={handleSaveProject}
+                  disabled={isActionBusy('admin-save-project')}
+                  aria-busy={isActionBusy('admin-save-project')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black disabled:opacity-50"
+                >
+                  {editProject ? 'บันทึกการแก้ไขโครงการ' : 'เพิ่มโครงการ'}
+                </button>
                 {editProject && <button onClick={resetProjectForm} className="px-4 py-2 bg-gray-200 rounded-xl text-sm font-black">ยกเลิกแก้ไข</button>}
               </div>
               <div className="overflow-x-auto">
@@ -567,7 +653,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     </tr>
                   </thead>
                   <tbody>
-                    {timesheetProjects.filter((p) => p.isActive).map((p) => (
+                    {projectPagination.pagedItems.map((p) => (
                       <tr key={p.id} className="border-t">
                         <td className="py-2 font-black">{p.code}</td>
                         <td className="py-2">{p.name}</td>
@@ -578,6 +664,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   </tbody>
                 </table>
               </div>
+              <TablePagination
+                page={projectPagination.page}
+                pageSize={projectPagination.pageSize}
+                totalItems={projectPagination.totalItems}
+                totalPages={projectPagination.totalPages}
+                rangeStart={projectPagination.rangeStart}
+                rangeEnd={projectPagination.rangeEnd}
+                onPageChange={projectPagination.setPage}
+                onPageSizeChange={projectPagination.setPageSize}
+              />
             </>
           ) : (
             <div className="border rounded-xl p-3 space-y-2">
@@ -592,7 +688,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <button
                   type="button"
                   onClick={handleAddTaskType}
-                  disabled={!isAdmin}
+                  disabled={!isAdmin || isActionBusy('admin-add-task-type')}
+                  aria-busy={isActionBusy('admin-add-task-type')}
                   className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black disabled:opacity-40"
                 >
                   เพิ่ม Task
@@ -633,12 +730,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </button>
               <button
                 type="button"
-                onClick={handleResetAllData}
+                onClick={handleProcessVacationQuota}
+                disabled={isActionBusy('admin-process-vacation-quota')}
+                aria-busy={isActionBusy('admin-process-vacation-quota')}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-amber-500 text-white rounded-2xl font-black text-sm hover:bg-amber-600 transition shadow-lg"
-                title="ลบข้อมูลเดิมทั้งหมด แล้วโหลดรายชื่อ 20 คน + วันหยุดตั้งต้นใหม่"
+                title="คำนวณวันลาพักร้อนตั้งต้นของปี และหักมาสายตามกติกา"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                โหลดข้อมูลตั้งต้นใหม่
+                ประมวลผลวันลาพักร้อน
               </button>
             </div>
           </div>
@@ -671,7 +770,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     vacationUsedByUser[req.userId] = (vacationUsedByUser[req.userId] ?? 0) + businessDays(req.startDate, req.endDate, holidayMap);
                   });
                   const defaultVacation = getLeaveTypes().find(t => t.id === 'VACATION')?.defaultQuota ?? 0;
-                  return users.map(user => {
+                  return employeePagination.pagedItems.map(user => {
                     const manager = users.find(u => u.id === user.managerId);
                     const joinDate = new Date(user.joinDate);
                     const tenureYears = (Date.now() - joinDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
@@ -722,6 +821,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                           type="button"
                           role="switch"
                           aria-checked={user.isSuspended === true}
+                          aria-busy={isActionBusy(`admin-toggle-suspend-${user.id}`)}
+                          disabled={isActionBusy(`admin-toggle-suspend-${user.id}`)}
                           title={user.isSuspended ? 'Suspend: ON' : 'Suspend: OFF'}
                           onClick={() => {
                             const next = !(user.isSuspended === true);
@@ -730,26 +831,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                                 ? `ยืนยันระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?`
                                 : `ยืนยันปลดระงับการใช้งานบัญชีของ "${user.name}" หรือไม่?\n(ระบบจะรีเซ็ตจำนวนครั้งที่ลงชื่อเข้าใช้ไม่สำเร็จเป็น 0)`,
                               () => {
-                                const patch = { ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 };
-                                // Optimistic UI (so the switch moves immediately)
-                                setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...patch } : u)));
-
-                                const result = updateUser(patch);
-                                const onDone = () => {
-                                  refreshUsers();
-                                  showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
-                                };
-                                if (result != null && typeof (result as Promise<void>).then === 'function') {
-                                  (result as Promise<void>)
-                                    .then(onDone)
-                                    .catch(() => {
-                                      // rollback optimistic UI
-                                      setUsers((prev) => prev.map((u) => (u.id === user.id ? user : u)));
-                                      showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่');
-                                    });
-                                } else {
-                                  onDone();
-                                }
+                                runAction(`admin-toggle-suspend-${user.id}`, async () => {
+                                  const patch = { ...user, isSuspended: next, failedLoginAttempts: next ? (user.failedLoginAttempts ?? 0) : 0 };
+                                  setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...patch } : u)));
+                                  try {
+                                    const result = updateUser(patch);
+                                    if (result != null && typeof (result as Promise<void>).then === 'function') {
+                                      await (result as Promise<void>);
+                                    }
+                                    refreshUsers();
+                                    showAlert(next ? 'ระงับการใช้งานบัญชีเรียบร้อยแล้ว' : 'ปลดระงับการใช้งานบัญชีเรียบร้อยแล้ว');
+                                  } catch {
+                                    setUsers((prev) => prev.map((u) => (u.id === user.id ? user : u)));
+                                    showAlert('ไม่สามารถอัปเดตสถานะ Suspend ได้ กรุณาลองใหม่');
+                                  }
+                                });
                               }
                             );
                           }}
@@ -792,7 +888,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                           <button
                             type="button"
                             onClick={() => handleDeleteEmployee(user)}
-                            disabled={users.length <= 1}
+                            disabled={users.length <= 1 || isActionBusy(`admin-delete-user-${user.id}`)}
+                            aria-busy={isActionBusy(`admin-delete-user-${user.id}`)}
                             className="text-xs font-black text-rose-600 hover:text-rose-800 uppercase tracking-tighter disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             ลบ
@@ -806,6 +903,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </tbody>
             </table>
           </div>
+          <TablePagination
+            page={employeePagination.page}
+            pageSize={employeePagination.pageSize}
+            totalItems={employeePagination.totalItems}
+            totalPages={employeePagination.totalPages}
+            rangeStart={employeePagination.rangeStart}
+            rangeEnd={employeePagination.rangeEnd}
+            onPageChange={employeePagination.setPage}
+            onPageSizeChange={employeePagination.setPageSize}
+          />
         </div>
       ) : activeSubTab === 'leavetypes' ? (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
@@ -879,7 +986,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <button
                   type="button"
                   onClick={handleSaveLatePolicy}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition"
+                  disabled={isActionBusy('admin-save-late-policy')}
+                  aria-busy={isActionBusy('admin-save-late-policy')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition disabled:opacity-50"
                 >
                   บันทึกกติกา
                 </button>
@@ -897,20 +1006,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {leaveTypes.filter(t => t.isActive).sort((a, b) => a.order - b.order).map(lt => (
+                {leaveTypePagination.pagedItems.map(lt => (
                   <tr key={lt.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 font-bold text-gray-900">{lt.label}</td>
                     <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600">{APPLICABLE_LABELS[lt.applicableTo]}</span></td>
                     <td className="px-6 py-4 text-center font-black text-indigo-600">{lt.defaultQuota >= 999 ? 'ไม่จำกัด' : lt.defaultQuota}</td>
                     <td className="px-6 py-4 text-right">
                       <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800 mr-2">แก้ไข</button>
-                      <button type="button" onClick={() => handleDeleteLeaveType(lt)} className="text-xs font-black text-rose-600 hover:text-rose-800">ปิดใช้</button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteLeaveType(lt)}
+                        disabled={isActionBusy(`admin-delete-leave-type-${lt.id}`)}
+                        aria-busy={isActionBusy(`admin-delete-leave-type-${lt.id}`)}
+                        className="text-xs font-black text-rose-600 hover:text-rose-800 disabled:opacity-40"
+                      >
+                        ปิดใช้
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <TablePagination
+            page={leaveTypePagination.page}
+            pageSize={leaveTypePagination.pageSize}
+            totalItems={leaveTypePagination.totalItems}
+            totalPages={leaveTypePagination.totalPages}
+            rangeStart={leaveTypePagination.rangeStart}
+            rangeEnd={leaveTypePagination.rangeEnd}
+            onPageChange={leaveTypePagination.setPage}
+            onPageSizeChange={leaveTypePagination.setPageSize}
+          />
 
           {showAddLeaveType && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -932,7 +1059,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     <input type="number" min={0} value={newLTQuota} onChange={(e) => setNewLTQuota(e.target.value)} className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold" />
                   </div>
                   <div className="flex gap-2">
-                    <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm">บันทึก</button>
+                    <button type="submit" disabled={isActionBusy('admin-add-leave-type')} aria-busy={isActionBusy('admin-add-leave-type')} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50">บันทึก</button>
                     <button type="button" onClick={() => setShowAddLeaveType(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm">ยกเลิก</button>
                   </div>
                 </form>
@@ -960,7 +1087,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     <input type="number" min={0} value={editingLeaveType.defaultQuota} onChange={(e) => setEditingLeaveType(prev => prev ? { ...prev, defaultQuota: Math.max(0, Math.floor(Number(e.target.value)) || 0) } : prev)} className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold" />
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={handleSaveLeaveType} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm">บันทึก</button>
+                    <button type="button" onClick={handleSaveLeaveType} disabled={isActionBusy('admin-save-leave-type')} aria-busy={isActionBusy('admin-save-leave-type')} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50">บันทึก</button>
                     <button type="button" onClick={() => setEditingLeaveType(null)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm">ยกเลิก</button>
                   </div>
                 </div>
@@ -985,14 +1112,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               onClick={() => {
                 const label = newExpenseLabel.trim();
                 if (!label) return;
-                postExpenseType({ label, isActive: true })
-                  .then(() => {
+                runAction('admin-add-expense-type', async () => {
+                  try {
+                    await postExpenseType({ label, isActive: true });
                     setNewExpenseLabel('');
                     refreshExpenseTypes();
                     showAlert('เพิ่มประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
-                  })
-                  .catch((err) => showAlert(err instanceof Error ? err.message : 'เพิ่มประเภทค่าใช้จ่ายไม่สำเร็จ'));
+                  } catch (err) {
+                    showAlert(err instanceof Error ? err.message : 'เพิ่มประเภทค่าใช้จ่ายไม่สำเร็จ');
+                  }
+                });
               }}
+              disabled={isActionBusy('admin-add-expense-type')}
+              aria-busy={isActionBusy('admin-add-expense-type')}
               className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black"
             >
               เพิ่มประเภท
@@ -1008,13 +1140,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     onClick={() => {
                       const updated = window.prompt('แก้ไขชื่อประเภทค่าใช้จ่าย', t.label);
                       if (!updated || !updated.trim()) return;
-                      postExpenseType({ id: t.id, label: updated.trim(), isActive: true })
-                        .then(() => {
+                      runAction(`admin-edit-expense-type-${t.id}`, async () => {
+                        try {
+                          await postExpenseType({ id: t.id, label: updated.trim(), isActive: true });
                           refreshExpenseTypes();
                           showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว');
-                        })
-                        .catch((err) => showAlert(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ'));
+                        } catch (err) {
+                          showAlert(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
+                        }
+                      });
                     }}
+                    disabled={isActionBusy(`admin-edit-expense-type-${t.id}`)}
+                    aria-busy={isActionBusy(`admin-edit-expense-type-${t.id}`)}
                     className="text-xs font-black text-blue-600"
                   >
                     แก้ไข
@@ -1023,14 +1160,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     type="button"
                     onClick={() => {
                       showConfirm(`ต้องการปิดใช้ประเภท "${t.label}" หรือไม่?`, () => {
-                        deleteExpenseType(t.id)
-                          .then(() => {
+                        runAction(`admin-delete-expense-type-${t.id}`, async () => {
+                          try {
+                            await deleteExpenseType(t.id);
                             refreshExpenseTypes();
                             showAlert('ปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
-                          })
-                          .catch((err) => showAlert(err instanceof Error ? err.message : 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ'));
+                          } catch (err) {
+                            showAlert(err instanceof Error ? err.message : 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ');
+                          }
+                        });
                       });
                     }}
+                    disabled={isActionBusy(`admin-delete-expense-type-${t.id}`)}
+                    aria-busy={isActionBusy(`admin-delete-expense-type-${t.id}`)}
                     className="text-xs font-black text-rose-600"
                   >
                     ลบ
@@ -1072,7 +1214,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl outline-none focus:border-blue-500 font-bold text-sm transition"
                   />
                 </div>
-                <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm hover:bg-blue-700 transition shadow-xl shadow-blue-50">
+                <button type="submit" disabled={isActionBusy('admin-add-holiday')} aria-busy={isActionBusy('admin-add-holiday')} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm hover:bg-blue-700 transition shadow-xl shadow-blue-50 disabled:opacity-50">
                   บันทึกวันหยุด
                 </button>
               </div>
@@ -1089,14 +1231,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {sortedHolidayDates.map(date => (
+                  {holidayPagination.pagedItems.map(date => (
                     <tr key={date} className="hover:bg-gray-50 transition">
                       <td className="px-6 py-4 font-bold text-gray-700">
                         {formatYmdAsDdMmBe(date)}
                       </td>
                       <td className="px-6 py-4 font-bold text-gray-900">{holidays[date]}</td>
                       <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleDeleteHoliday(date)} className="text-rose-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition">
+                        <button
+                          onClick={() => handleDeleteHoliday(date)}
+                          disabled={isActionBusy(`admin-delete-holiday-${date}`)}
+                          aria-busy={isActionBusy(`admin-delete-holiday-${date}`)}
+                          className="text-rose-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition disabled:opacity-40"
+                        >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         </button>
                       </td>
@@ -1109,6 +1256,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="px-6 pb-4">
+              <TablePagination
+                page={holidayPagination.page}
+                pageSize={holidayPagination.pageSize}
+                totalItems={holidayPagination.totalItems}
+                totalPages={holidayPagination.totalPages}
+                rangeStart={holidayPagination.rangeStart}
+                rangeEnd={holidayPagination.rangeEnd}
+                onPageChange={holidayPagination.setPage}
+                onPageSizeChange={holidayPagination.setPageSize}
+              />
             </div>
           </div>
         </div>
@@ -1177,7 +1336,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </select>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 bg-emerald-600 text-white py-3 rounded-2xl font-black text-sm hover:bg-emerald-700 transition">
+                <button type="submit" disabled={isActionBusy('admin-add-employee')} aria-busy={isActionBusy('admin-add-employee')} className="flex-1 bg-emerald-600 text-white py-3 rounded-2xl font-black text-sm hover:bg-emerald-700 transition disabled:opacity-50">
                   บันทึก
                 </button>
                 <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-2xl font-black text-sm hover:bg-gray-200 transition">
@@ -1255,7 +1414,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </div>
 
             <div className="flex gap-4">
-              <button type="button" onClick={handleSave} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition shadow-xl shadow-blue-50">
+              <button type="button" onClick={handleSave} disabled={isActionBusy('admin-save-user')} aria-busy={isActionBusy('admin-save-user')} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition shadow-xl shadow-blue-50 disabled:opacity-50">
                 บันทึกการเปลี่ยนแปลง
               </button>
               <button type="button" onClick={() => { setEditingUser(null); setEditPassword(''); }} className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black hover:bg-gray-200 transition">

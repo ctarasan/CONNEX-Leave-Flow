@@ -4,6 +4,7 @@ import { saveAttendance, getAttendanceRecords } from '../store';
 import { useAlert } from '../AlertContext';
 import { isApiMode, getAttendanceVerifyNetwork } from '../api';
 import { todayLocalYmd, formatYmdAsDdMmBe } from '../utils';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface AttendanceModuleProps {
   user: User;
@@ -14,8 +15,9 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   const { showAlert } = useAlert();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const isSubmitting = isActionBusy('attendance-submit');
+  const isVerifying = isActionBusy('attendance-verify');
   const [verificationStatus, setVerificationStatus] = useState<'IDLE' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -42,34 +44,32 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   const canCheckOut = !isSubmitting && hasCheckedInToday && !hasCheckedOutToday;
 
   const verifyWiFiNetwork = async () => {
-    setIsVerifying(true);
-    setVerificationStatus('IDLE');
-    setStatusMessage('กำลังตรวจสอบเครือข่าย...');
+    await runAction('attendance-verify', async () => {
+      setVerificationStatus('IDLE');
+      setStatusMessage('กำลังตรวจสอบเครือข่าย...');
 
-    if (!isApiMode()) {
-      setVerificationStatus('FAILED');
-      setStatusMessage(`การตรวจสอบ WiFi "${REQUIRED_SSID}" ใช้ได้เมื่อแอปเชื่อมต่อเซิร์ฟเวอร์บริษัท กรุณาเชื่อมต่อ WiFi ออฟฟิศ`);
-      setIsVerifying(false);
-      return;
-    }
-
-    try {
-      const { allowed, clientIp } = await getAttendanceVerifyNetwork();
-      if (allowed) {
-        setVerificationStatus('SUCCESS');
-        setStatusMessage('เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ — สามารถลงเวลาได้');
-      } else {
+      if (!isApiMode()) {
         setVerificationStatus('FAILED');
-        setStatusMessage(clientIp
-          ? 'ตรวจสอบไม่ผ่าน: ไม่อยู่บนเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศเท่านั้น'
-          : 'ตรวจสอบไม่ผ่าน: กรุณาเชื่อมต่อ WiFi ออฟฟิศ — ลงเวลาได้เฉพาะที่ออฟฟิศ');
+        setStatusMessage('การตรวจสอบ WiFi ออฟฟิศ ใช้ได้เมื่อแอปเชื่อมต่อเซิร์ฟเวอร์บริษัท กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
+        return;
       }
-    } catch {
-      setVerificationStatus('FAILED');
-      setStatusMessage('ตรวจสอบไม่ผ่าน: ไม่สามารถยืนยันเครือข่ายได้ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
-    } finally {
-      setIsVerifying(false);
-    }
+
+      try {
+        const { allowed, clientIp } = await getAttendanceVerifyNetwork();
+        if (allowed) {
+          setVerificationStatus('SUCCESS');
+          setStatusMessage('เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ — สามารถลงเวลาได้');
+        } else {
+          setVerificationStatus('FAILED');
+          setStatusMessage(clientIp
+            ? 'ตรวจสอบไม่ผ่าน: ไม่อยู่บนเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศเท่านั้น'
+            : 'ตรวจสอบไม่ผ่าน: กรุณาเชื่อมต่อ WiFi ออฟฟิศ — ลงเวลาได้เฉพาะที่ออฟฟิศ');
+        }
+      } catch {
+        setVerificationStatus('FAILED');
+        setStatusMessage('ตรวจสอบไม่ผ่าน: ไม่สามารถยืนยันเครือข่ายได้ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
+      }
+    });
   };
 
   const handleAction = async (type: 'IN' | 'OUT') => {
@@ -81,29 +81,28 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
       showAlert('ต้องเช็คอินก่อนจึงจะเช็คเอาท์ได้');
       return;
     }
-    try {
-      setIsSubmitting(true);
-      const result = saveAttendance(user.id, type);
-      const record = typeof (result as Promise<unknown>)?.then === 'function'
-        ? await (result as Promise<AttendanceRecord>)
-        : result as AttendanceRecord;
-      setRecords((prev) => {
-        const idx = prev.findIndex((r) => r.date === record.date);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = { ...next[idx], ...record };
-          return next;
-        }
-        return [record, ...prev];
-      });
-      onUpdate();
-      showAlert(type === 'IN' ? 'บันทึกเวลาเช็คอินสำเร็จ' : 'บันทึกเวลาเช็คเอาท์สำเร็จ');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
-      showAlert(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
+    await runAction('attendance-submit', async () => {
+      try {
+        const result = saveAttendance(user.id, type);
+        const record = typeof (result as Promise<unknown>)?.then === 'function'
+          ? await (result as Promise<AttendanceRecord>)
+          : result as AttendanceRecord;
+        setRecords((prev) => {
+          const idx = prev.findIndex((r) => r.date === record.date);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...record };
+            return next;
+          }
+          return [record, ...prev];
+        });
+        onUpdate();
+        showAlert(type === 'IN' ? 'บันทึกเวลาเช็คอินสำเร็จ' : 'บันทึกเวลาเช็คเอาท์สำเร็จ');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
+        showAlert(msg);
+      }
+    });
   };
 
   return (
@@ -145,6 +144,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
               <button 
                 onClick={verifyWiFiNetwork}
                 disabled={isVerifying}
+                aria-busy={isVerifying}
                 className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm disabled:opacity-50"
               >
                 {isVerifying ? 'กำลังตรวจสอบ...' : 'ตรวจสอบเครือข่าย WiFi'}
@@ -157,6 +157,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
             <button 
               onClick={() => handleAction('IN')}
               disabled={!canCheckIn}
+              aria-busy={isSubmitting}
               className="w-full h-24 bg-emerald-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คอิน (IN)
@@ -164,6 +165,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
             <button 
               onClick={() => handleAction('OUT')}
               disabled={!canCheckOut}
+              aria-busy={isSubmitting}
               className="w-full h-24 bg-blue-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คเอาท์ (OUT)
