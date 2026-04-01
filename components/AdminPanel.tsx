@@ -232,9 +232,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     return Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
   };
 
-  const withRecomputedVacationQuota = async (user: User): Promise<User> => {
+  const withRecomputedVacationQuota = async (user: User, attendanceReady = false): Promise<User> => {
     const processYear = new Date().getFullYear();
-    if (isApiMode() && user.id) {
+    if (isApiMode() && user.id && !attendanceReady) {
       await loadAttendanceForUser(user.id).catch(() => {});
     }
     return {
@@ -443,13 +443,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           const updatedUsers: User[] = [];
 
           for (const user of sourceUsers) {
-            const nextUser: User = {
-              ...user,
-              quotas: {
-                ...user.quotas,
-                VACATION: computeVacationQuotaStartAfterLate(user, processYear),
-              },
-            };
+            const nextUser = await withRecomputedVacationQuota(user, true);
             const result = updateUser(nextUser);
             if (result && typeof (result as Promise<void>).then === 'function') {
               await (result as Promise<void>);
