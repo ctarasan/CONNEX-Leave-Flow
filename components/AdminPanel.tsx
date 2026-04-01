@@ -799,9 +799,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   const defaultVacation = getLeaveTypes().find(t => t.id === 'VACATION')?.defaultQuota ?? 0;
                   return employeePagination.pagedItems.map(user => {
                     const manager = users.find(u => u.id === user.managerId);
-                    const joinDate = new Date(user.joinDate);
-                    const tenureYears = (Date.now() - joinDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-                    const effectiveQuota = tenureYears < 1 ? 0 : (user.quotas['VACATION'] ?? defaultVacation);
+                    const effectiveQuota = user.quotas['VACATION'] ?? defaultVacation;
                     const used = vacationUsedByUser[user.id] ?? 0;
                     const remaining = effectiveQuota - used;
                     return (
