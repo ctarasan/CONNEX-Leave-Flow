@@ -187,6 +187,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const raw = String(joinDateRaw || '').trim();
     if (!raw) return null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const isoPrefix = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoPrefix) {
+      const yy = Number(isoPrefix[1]);
+      const mm = Number(isoPrefix[2]);
+      const dd = Number(isoPrefix[3]);
+      if (yy >= 1900 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+        return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+      }
+    }
     const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (slash) {
       const dd = Number(slash[1]);
