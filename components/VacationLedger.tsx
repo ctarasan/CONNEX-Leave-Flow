@@ -48,7 +48,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
     const requests = getLeaveRequests().filter(r =>
       r.userId === liveUser.id &&
       r.type === 'VACATION' &&
-      r.status === LeaveStatus.APPROVED &&
+      r.status !== LeaveStatus.REJECTED &&
       new Date(r.startDate).getFullYear() === currentYear
     );
 
@@ -61,7 +61,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
         id: r.id,
         date: r.startDate,
         type: 'LEAVE' as const,
-        description: `ลาพักร้อน (${formatYmdAsDdMmBe(r.startDate)} ถึง ${formatYmdAsDdMmBe(r.endDate)})`,
+        description: `ลาพักร้อน${r.status === LeaveStatus.PENDING ? ' (รออนุมัติ)' : ''} (${formatYmdAsDdMmBe(r.startDate)} ถึง ${formatYmdAsDdMmBe(r.endDate)})`,
         amount: calculateBusinessDays(r.startDate, r.endDate),
         timestamp: r.reviewedAt || r.submittedAt
       })),
@@ -83,7 +83,7 @@ const VacationLedger: React.FC<VacationLedgerProps> = ({ user }) => {
     const requests = getLeaveRequests().filter((r) =>
       r.userId === liveUser.id &&
       r.type === 'VACATION' &&
-      r.status === LeaveStatus.APPROVED &&
+      r.status !== LeaveStatus.REJECTED &&
       new Date(r.startDate).getFullYear() === currentYear
     );
     return requests.reduce((sum, r) => sum + calculateBusinessDays(r.startDate, r.endDate), 0);

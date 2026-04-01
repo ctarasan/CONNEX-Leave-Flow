@@ -578,8 +578,7 @@ const App: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {visibleDashboardLeaveTypes.map(lt => {
                   const baseQuota = currentUser.quotas[lt.id] ?? lt.defaultQuota;
-                  const isVacationUnderOneYear = lt.id === 'VACATION' && tenureYears < 1;
-                  const quota = isVacationUnderOneYear ? 0 : baseQuota;
+                  const quota = baseQuota;
                   const usedApproved = leaveUsage.approved[lt.id] || 0;
                   const usedPending = leaveUsage.pending[lt.id] || 0;
                   const used = leaveUsage.combined[lt.id] || 0;
