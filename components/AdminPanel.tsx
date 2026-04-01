@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition, ExpenseTypeDefinition } from '../types';
-import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
+import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
@@ -204,6 +204,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       if (yy >= 2400) yy -= 543;
       if (yy < 1900 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
       return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    }
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
     }
     return null;
   };
@@ -435,6 +439,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: quota_start_after_late = quota_${processYear} - late_penalty`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
+          if (isApiMode()) {
+            await loadFromApi().catch(() => {});
+          }
           const sourceUsers = getAllUsers();
           if (isApiMode()) {
             await Promise.all(sourceUsers.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
@@ -451,6 +458,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             updatedUsers.push(nextUser);
           }
 
+          if (isApiMode()) {
+            await loadFromApi().catch(() => {});
+          }
           const latestUsers = getAllUsers();
           setUsers(latestUsers.length > 0 ? latestUsers : updatedUsers);
           refreshUsers();
