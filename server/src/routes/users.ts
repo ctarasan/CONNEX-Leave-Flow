@@ -14,6 +14,10 @@ const getQuotaValue = (quotas: unknown, key: string): number => {
   const num = Number(raw);
   return Number.isFinite(num) ? num : 0;
 };
+const quotaOut = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
@@ -75,20 +79,23 @@ router.get('/', requireAuth, async (_req, res) => {
       const q = quotasJson && typeof quotasJson === 'object' && !Array.isArray(quotasJson)
         ? { ...defaultQuotas(), ...quotasJson as Record<string, number> }
         : {
-            sick: (sick_quota as number) ?? 0,
-            personal: (personal_quota as number) ?? 0,
-            vacation: (vacation_quota as number) ?? 0,
-            ordination: (ordination_quota as number) ?? 0,
-            military: (military_quota as number) ?? 0,
-            maternity: (maternity_quota as number) ?? 0,
-            sterilization: (sterilization_quota as number) ?? 0,
-            paternity: (paternity_quota as number) ?? 0,
+            sick: quotaOut(sick_quota),
+            personal: quotaOut(personal_quota),
+            vacation: quotaOut(vacation_quota),
+            ordination: quotaOut(ordination_quota),
+            military: quotaOut(military_quota),
+            maternity: quotaOut(maternity_quota),
+            sterilization: quotaOut(sterilization_quota),
+            paternity: quotaOut(paternity_quota),
           };
       return { ...o, password: '', quotas: q };
     });
     res.json(list);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message.includes('invalid input syntax for type integer')) {
+      return res.status(400).json({ error: 'ฐานข้อมูลยังไม่รองรับโควต้าแบบทศนิยม กรุณารัน migration: server/migrations/012_quota_decimal.sql' });
+    }
     res.status(500).json({ error: message });
   }
 });
@@ -190,6 +197,9 @@ router.put('/:id', requireAuth, async (req, res) => {
       if (msg.includes('is_suspended') || msg.includes('failed_login_attempts')) {
         return res.status(400).json({ error: 'ยังไม่ได้รัน migration สำหรับฟังก์ชัน Suspend (server/migrations/006_user_security.sql)' });
       }
+      if (msg.includes('invalid input syntax for type integer')) {
+        return res.status(400).json({ error: 'ฐานข้อมูลยังไม่รองรับโควต้าแบบทศนิยม กรุณารัน migration: server/migrations/012_quota_decimal.sql' });
+      }
       throw uErr;
     }
     const { rows } = await pool.query(
@@ -208,14 +218,14 @@ router.put('/:id', requireAuth, async (req, res) => {
         ...r, 
         password: '',
         quotas: {
-          sick: sick_quota || 0,
-          personal: personal_quota || 0,
-          vacation: vacation_quota || 0,
-          ordination: ordination_quota || 0,
-          military: military_quota || 0,
-          maternity: maternity_quota || 0,
-          sterilization: sterilization_quota || 0,
-          paternity: paternity_quota || 0,
+          sick: quotaOut(sick_quota),
+          personal: quotaOut(personal_quota),
+          vacation: quotaOut(vacation_quota),
+          ordination: quotaOut(ordination_quota),
+          military: quotaOut(military_quota),
+          maternity: quotaOut(maternity_quota),
+          sterilization: quotaOut(sterilization_quota),
+          paternity: quotaOut(paternity_quota),
         }
       });
     } else {
