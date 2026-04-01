@@ -217,7 +217,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
     const normalizedJoinDate = normalizeJoinDateForCalc(user.joinDate);
     if (!normalizedJoinDate) {
-      const fallback = Number(user.quotas['VACATION'] ?? 0);
+      const fallback = Number(getLeaveTypes().find((t) => t.id === 'VACATION')?.defaultQuota ?? 0);
       return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
     }
     const join = new Date(`${normalizedJoinDate}T12:00:00`);
@@ -236,9 +236,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     return Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
   };
 
-  const withRecomputedVacationQuota = async (user: User, attendanceReady = false): Promise<User> => {
+  const withRecomputedVacationQuota = async (user: User): Promise<User> => {
     const processYear = new Date().getFullYear();
-    if (isApiMode() && user.id && !attendanceReady) {
+    if (isApiMode() && user.id) {
       await loadAttendanceForUser(user.id).catch(() => {});
     }
     return {
@@ -443,14 +443,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             await loadFromApi().catch(() => {});
           }
           const sourceUsers = getAllUsers();
-          if (isApiMode()) {
-            await Promise.all(sourceUsers.map((u) => loadAttendanceForUser(u.id).catch(() => {})));
-          }
 
           const updatedUsers: User[] = [];
 
           for (const user of sourceUsers) {
-            const nextUser = await withRecomputedVacationQuota(user, true);
+            const nextUser = await withRecomputedVacationQuota(user);
             const result = updateUser(nextUser);
             if (result && typeof (result as Promise<void>).then === 'function') {
               await (result as Promise<void>);
