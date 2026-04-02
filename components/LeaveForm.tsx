@@ -222,10 +222,10 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
 
         <div>
           <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
-            เหตุผลประกอบการลา <span className="text-red-500">*</span>
+            เหตุผลประกอบการลา <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.leaveReason})
           </label>
           <textarea required rows={3} maxLength={FIELD_MAX_LENGTHS.leaveReason} value={reason} onChange={(e) => setReason(e.target.value)} className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 outline-none transition text-sm font-bold text-gray-800 placeholder:text-gray-300" placeholder="โปรระบุรายละเอียด..." aria-describedby="reason-hint" />
-          <p id="reason-hint" className="text-[10px] text-gray-400 mt-1">{reason.length}/{FIELD_MAX_LENGTHS.leaveReason} • Max Length = {FIELD_MAX_LENGTHS.leaveReason}</p>
+          <p id="reason-hint" className="text-[10px] text-gray-400 mt-1">{reason.length}/{FIELD_MAX_LENGTHS.leaveReason}</p>
         </div>
 
         {validationMessage && (

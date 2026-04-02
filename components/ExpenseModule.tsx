@@ -495,7 +495,7 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
       <div className="bg-white border border-gray-200 rounded-2xl p-5 no-print">
         <h3 className="font-black text-gray-900 mb-3">สร้างใบเบิกค่าใช้จ่ายทั่วไป</h3>
         <div className="grid md:grid-cols-3 gap-3 mb-4">
-          <label className="text-xs font-bold text-gray-600">เลขใบเบิก
+          <label className="text-xs font-bold text-gray-600">เลขใบเบิก (Max Length = {FIELD_MAX_LENGTHS.expenseClaimId})
             <input
               value={claimId}
               onChange={(e) => setClaimId(e.target.value)}
@@ -504,11 +504,9 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
               disabled={Boolean(claimId)}
               className={`mt-1 w-full border rounded-lg px-3 py-2 text-sm ${claimId ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
             />
-            <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.expenseClaimId}</p>
           </label>
-          <label className="text-xs font-bold text-gray-600">ชื่อพนักงานผู้ขอเบิก
+          <label className="text-xs font-bold text-gray-600">ชื่อพนักงานผู้ขอเบิก (Max Length = {FIELD_MAX_LENGTHS.employeeName})
             <input value={currentUser.name} maxLength={FIELD_MAX_LENGTHS.employeeName} disabled className="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-gray-50" />
-            <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.employeeName}</p>
           </label>
           <div className="text-xs font-bold text-gray-600">
             <DatePicker
@@ -611,6 +609,7 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             <option value="lastMonth">เดือนที่แล้ว</option>
             <option value="custom">กำหนดช่วงเอง</option>
           </select>
+          <span className="text-[10px] font-bold text-gray-500">ผู้ขอเบิก (Max Length = {FIELD_MAX_LENGTHS.searchText})</span>
           <input
             value={requesterQuery}
             onChange={(e) => setRequesterQuery(e.target.value)}
@@ -618,7 +617,6 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             placeholder="ระบุผู้ขอเบิก (พิมพ์ชื่อบางส่วน)"
             className="border rounded-lg px-2 py-1 text-xs min-w-[220px]"
           />
-          <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
           <div className="min-w-[130px]"><DatePicker label="" value={fromDate} onChange={(v) => { setPreset('custom'); setFromDate(v); }} size="compact" /></div>
           <div className="min-w-[130px]"><DatePicker label="" value={toDate} onChange={(v) => { setPreset('custom'); setToDate(v); }} size="compact" /></div>
           {canUseScopeFilter && (

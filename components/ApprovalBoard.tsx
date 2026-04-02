@@ -85,6 +85,9 @@ const typeLabel = (found?.label && found.label.trim()) ? found.label : req.type 
                 </div>
                 
                 <div className="space-y-3">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    ความเห็นเพิ่มเติม (Max Length = {FIELD_MAX_LENGTHS.approvalComment})
+                  </label>
                   <input 
                     type="text" 
                     placeholder="ใส่ความเห็นเพิ่มเติมเพื่อแจ้งพนักงาน..."
@@ -92,7 +95,6 @@ const typeLabel = (found?.label && found.label.trim()) ? found.label : req.type 
                     className="w-full p-3 text-sm bg-white border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 font-bold"
                     onChange={(e) => setComment(e.target.value)}
                   />
-                  <p className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.approvalComment}</p>
                   <div className="flex gap-3">
                     <button 
                       onClick={() => handleAction(req.id, LeaveStatus.APPROVED)}

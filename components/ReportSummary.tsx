@@ -613,7 +613,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                ตัวกรอง:
+                ตัวกรอง (Max Length = {FIELD_MAX_LENGTHS.searchText}):
               </span>
               <input
                 type="text"
@@ -623,7 +623,6 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                 maxLength={FIELD_MAX_LENGTHS.searchText}
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-56 md:w-72"
               />
-              <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
             </div>
 
             <div className="flex items-center justify-between gap-3 flex-wrap">

@@ -694,14 +694,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           {projectTab === 'project' ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input value={projCode} maxLength={FIELD_MAX_LENGTHS.projectCode} onChange={(e) => setProjCode(e.target.value)} placeholder="รหัสโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold" />
-                <input value={projName} maxLength={FIELD_MAX_LENGTHS.projectName} onChange={(e) => setProjName(e.target.value)} placeholder="ชื่อโครงการ" className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-2" />
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  รหัสโครงการ (Max Length = {FIELD_MAX_LENGTHS.projectCode})
+                  <input value={projCode} maxLength={FIELD_MAX_LENGTHS.projectCode} onChange={(e) => setProjCode(e.target.value)} placeholder="รหัสโครงการ" className="mt-1 px-3 py-2 border rounded-xl text-sm font-bold w-full normal-case tracking-normal text-gray-900" />
+                </label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest md:col-span-2">
+                  ชื่อโครงการ (Max Length = {FIELD_MAX_LENGTHS.projectName})
+                  <input value={projName} maxLength={FIELD_MAX_LENGTHS.projectName} onChange={(e) => setProjName(e.target.value)} placeholder="ชื่อโครงการ" className="mt-1 px-3 py-2 border rounded-xl text-sm font-bold w-full normal-case tracking-normal text-gray-900" />
+                </label>
                 <select value={projManagerId} onChange={(e) => setProjManagerId(e.target.value)} className="px-3 py-2 border rounded-xl text-sm font-bold md:col-span-3">
                   <option value="">เลือก Project Manager</option>
                   {users.filter((u) => u.role !== UserRole.EMPLOYEE).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
-              <p className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.projectCode} (รหัสโครงการ), {FIELD_MAX_LENGTHS.projectName} (ชื่อโครงการ)</p>
               <div>
                 <p className="text-xs font-black text-gray-500 mb-2">กำหนดพนักงานในโครงการ (จัดกลุ่มตามแผนก)</p>
                 <div className="max-h-56 overflow-auto border rounded-xl p-3 space-y-3">
@@ -795,13 +800,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             <div className="border rounded-xl p-3 space-y-2">
               <p className="text-xs font-black text-gray-600">ตั้งค่า Task งาน (Admin)</p>
               <div className="flex gap-2">
-                <input
-                  value={newTaskLabel}
-                  maxLength={FIELD_MAX_LENGTHS.taskLabel}
-                  onChange={(e) => setNewTaskLabel(e.target.value)}
-                  placeholder="เพิ่มชื่อ Task ใหม่ เช่น Review"
-                  className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold"
-                />
+                <label className="flex-1 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  ชื่อ Task ใหม่ (Max Length = {FIELD_MAX_LENGTHS.taskLabel})
+                  <input
+                    value={newTaskLabel}
+                    maxLength={FIELD_MAX_LENGTHS.taskLabel}
+                    onChange={(e) => setNewTaskLabel(e.target.value)}
+                    placeholder="เพิ่มชื่อ Task ใหม่ เช่น Review"
+                    className="mt-1 w-full px-3 py-2 border rounded-lg text-sm font-bold normal-case tracking-normal text-gray-900"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={handleAddTaskType}
@@ -812,7 +820,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   เพิ่ม Task
                 </button>
               </div>
-              <p className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.taskLabel} (ชื่อ Task)</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {taskTypes.filter((t) => t.isActive).map((t) => (
                   <div key={`cfg-${t.id}`} className="flex items-center gap-2">
@@ -1166,10 +1173,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   </p>
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                      ชื่อประเภท <span className="text-red-500">*</span>
+                      ชื่อประเภท <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.leaveTypeLabel})
                     </label>
                     <input type="text" required maxLength={FIELD_MAX_LENGTHS.leaveTypeLabel} value={newLTLabel} onChange={(e) => setNewLTLabel(e.target.value)} placeholder="เช่น ลาคลอด" className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold" />
-                    <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.leaveTypeLabel}</p>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ใช้กับเพศ</label>
@@ -1196,9 +1202,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <h3 className="text-lg font-black text-gray-900 mb-4">แก้ไขประเภทวันลา</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ชื่อประเภท</label>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ชื่อประเภท (Max Length = {FIELD_MAX_LENGTHS.leaveTypeLabel})</label>
                     <input type="text" maxLength={FIELD_MAX_LENGTHS.leaveTypeLabel} value={editingLeaveType.label} onChange={(e) => setEditingLeaveType(prev => prev ? { ...prev, label: e.target.value } : prev)} className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold" />
-                    <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.leaveTypeLabel}</p>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ใช้กับเพศ</label>
@@ -1225,13 +1230,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             <h2 className="text-xl font-bold text-gray-900">จัดการประเภทค่าใช้จ่าย (Admin)</h2>
           </div>
           <div className="flex flex-wrap gap-2 mb-4">
-            <input
-              value={newExpenseLabel}
-              maxLength={FIELD_MAX_LENGTHS.expenseTypeLabel}
-              onChange={(e) => setNewExpenseLabel(e.target.value)}
-              placeholder="เช่น ค่าเดินทาง / ค่าเครื่องเขียน / ค่า Messenger"
-              className="flex-1 min-w-[240px] px-3 py-2 border rounded-xl text-sm font-bold"
-            />
+            <label className="flex-1 min-w-[240px] text-[10px] font-black text-gray-400 uppercase tracking-widest">
+              ชื่อประเภทค่าใช้จ่าย (Max Length = {FIELD_MAX_LENGTHS.expenseTypeLabel})
+              <input
+                value={newExpenseLabel}
+                maxLength={FIELD_MAX_LENGTHS.expenseTypeLabel}
+                onChange={(e) => setNewExpenseLabel(e.target.value)}
+                placeholder="เช่น ค่าเดินทาง / ค่าเครื่องเขียน / ค่า Messenger"
+                className="mt-1 w-full px-3 py-2 border rounded-xl text-sm font-bold normal-case tracking-normal text-gray-900"
+              />
+            </label>
             <button
               type="button"
               onClick={() => {
@@ -1255,7 +1263,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               เพิ่มประเภท
             </button>
           </div>
-          <p className="mb-3 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.expenseTypeLabel} (ชื่อประเภทค่าใช้จ่าย)</p>
           <div className="space-y-2">
             {expenseTypes.map((t) => (
               <div key={t.id} className="flex items-center justify-between border rounded-xl px-3 py-2">
@@ -1334,7 +1341,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 />
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
-                    ชื่อวันหยุด <span className="text-red-500">*</span>
+                    ชื่อวันหยุด <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.holidayName})
                   </label>
                   <input 
                     type="text" 
@@ -1345,7 +1352,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     onChange={(e) => setNewHolidayName(e.target.value)}
                     className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl outline-none focus:border-blue-500 font-bold text-sm transition"
                   />
-                  <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.holidayName}</p>
                 </div>
                 <button type="submit" disabled={isActionBusy('admin-add-holiday')} aria-busy={isActionBusy('admin-add-holiday')} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm hover:bg-blue-700 transition shadow-xl shadow-blue-50 disabled:opacity-50">
                   บันทึกวันหยุด
@@ -1422,24 +1428,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             <form onSubmit={handleAddEmployee} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
-                  ชื่อ-นามสกุล <span className="text-red-500">*</span>
+                  ชื่อ-นามสกุล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.employeeName})
                 </label>
                 <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="นาย/นาง/นางสาว ..." className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
-                <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.employeeName}</p>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
-                  อีเมล <span className="text-red-500">*</span>
+                  อีเมล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.email})
                 </label>
                 <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="email@company.com" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
-                <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.email}</p>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
-                  รหัสผ่าน (ใช้เข้าสู่ระบบ) <span className="text-red-500">*</span>
+                  รหัสผ่าน (ใช้เข้าสู่ระบบ) <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.password})
                 </label>
                 <input type="text" required maxLength={FIELD_MAX_LENGTHS.password} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="รหัสผ่านเริ่มต้น" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
-                <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.password}</p>
               </div>
                 <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1461,17 +1464,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
-                  ตำแหน่ง <span className="text-red-500">*</span>
+                  ตำแหน่ง <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.position})
                 </label>
                 <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={newPosition} onChange={(e) => setNewPosition(e.target.value)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
-                <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.position}</p>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
-                  แผนก <span className="text-red-500">*</span>
+                  แผนก <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.department})
                 </label>
                 <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
-                <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.department}</p>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
@@ -1513,19 +1514,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </h3>
 
             <div className="space-y-4 mb-6">
-              <p className="text-[11px] font-bold text-gray-500">
-                Max Length = {FIELD_MAX_LENGTHS.employeeName} (ชื่อ-นามสกุล), {FIELD_MAX_LENGTHS.email} (อีเมล), {FIELD_MAX_LENGTHS.password} (รหัสผ่าน), {FIELD_MAX_LENGTHS.position} (ตำแหน่ง), {FIELD_MAX_LENGTHS.department} (แผนก)
-              </p>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ชื่อ-นามสกุล</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ชื่อ-นามสกุล (Max Length = {FIELD_MAX_LENGTHS.employeeName})</label>
                 <input type="text" maxLength={FIELD_MAX_LENGTHS.employeeName} value={editingUser.name} onChange={(e) => setEditingUser(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">อีเมล</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">อีเมล (Max Length = {FIELD_MAX_LENGTHS.email})</label>
                 <input type="email" maxLength={FIELD_MAX_LENGTHS.email} value={editingUser.email} onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">เปลี่ยนรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน)</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">เปลี่ยนรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน) (Max Length = {FIELD_MAX_LENGTHS.password})</label>
                 <input type="text" maxLength={FIELD_MAX_LENGTHS.password} value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="รหัสผ่านใหม่" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1547,11 +1545,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง (Max Length = {FIELD_MAX_LENGTHS.position})</label>
                 <input type="text" maxLength={FIELD_MAX_LENGTHS.position} value={editingUser.position} onChange={(e) => setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก (Max Length = {FIELD_MAX_LENGTHS.department})</label>
                 <input type="text" maxLength={FIELD_MAX_LENGTHS.department} value={editingUser.department} onChange={(e) => setEditingUser(prev => prev ? { ...prev, department: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>

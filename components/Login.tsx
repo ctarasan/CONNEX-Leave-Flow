@@ -121,7 +121,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </p>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">
-                Email Address <span className="text-red-500">*</span>
+                Email Address <span className="text-red-500">*</span> <span className="text-gray-400">(Max Length = {FIELD_MAX_LENGTHS.email})</span>
               </label>
               <input 
                 type="email" 
@@ -132,11 +132,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
-              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.email}</p>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">
-                Password <span className="text-red-500">*</span>
+                Password <span className="text-red-500">*</span> <span className="text-gray-400">(Max Length = {FIELD_MAX_LENGTHS.password})</span>
               </label>
               <input 
                 type="password" 
@@ -147,7 +146,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
-              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.password}</p>
               {isApiMode() && (
                 <p className="mt-1 text-[10px] text-gray-500">ถ้าใช้ข้อมูลจาก seed: รหัสผ่านคือ ID 3 หลัก (001, 002, 003 ...)</p>
               )}
