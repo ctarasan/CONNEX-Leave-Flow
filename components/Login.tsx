@@ -1,56 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
-import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
-import { getAllUsers, saveCurrentUser, loadFromApi } from '../store';
+import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED, FIELD_MAX_LENGTHS } from '../constants';
+import { getAllUsers, saveCurrentUser, loadFromApi, updateUser, normalizeUser } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
-/** OWASP: Rate limit - max attempts before lockout (client-side; production should enforce server-side). */
-const MAX_ATTEMPTS = 5;
+/** OWASP: Rate limit - max attempts before lockout (client-side; server-side also enforces suspend policy in API mode). */
+const MAX_ATTEMPTS = 3;
 const LOCKOUT_MS = 60_000;
 
 interface LoginProps {
   onLogin: (user: User) => void;
-}
-
-/** แปลง quota keys จาก lowercase (backend) เป็น UPPERCASE (ที่ frontend ใช้) */
-function normalizeQuotaKeys(raw: Record<string, unknown>): Record<string, number> {
-  const KEY_MAP: Record<string, string> = {
-    sick: 'SICK', vacation: 'VACATION', personal: 'PERSONAL',
-    maternity: 'MATERNITY', sterilization: 'STERILIZATION', other: 'OTHER',
-    ordination: 'ORDINATION', military: 'MILITARY', paternity: 'PATERNITY',
-  };
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw)) {
-    const mapped = KEY_MAP[k.toLowerCase()] ?? k.toUpperCase();
-    out[mapped] = Number(v) || 0;
-  }
-  return out;
-}
-
-function normalizeUserId(raw: unknown): string {
-  if (raw == null) return '';
-  const s = String(raw).trim();
-  if (!s) return '';
-  if (/^\d+$/.test(s)) {
-    return String(parseInt(s, 10)).padStart(3, '0');
-  }
-  return s;
-}
-
-function normalizeUser(u: Record<string, unknown>): User {
-  const rawQuotas = (u.quotas && typeof u.quotas === 'object') ? (u.quotas as Record<string, unknown>) : {};
-  return {
-    id: normalizeUserId(u.id ?? ''),
-    name: String(u.name ?? ''),
-    email: String(u.email ?? ''),
-    password: '',
-    role: (u.role as User['role']) ?? 'EMPLOYEE',
-    gender: ((u.gender as User['gender']) ?? 'male'),
-    department: String(u.department ?? ''),
-    joinDate: String(u.joinDate ?? u.join_date ?? ''),
-    managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
-    quotas: normalizeQuotaKeys(rawQuotas),
-  };
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
@@ -61,24 +21,30 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [connectionError, setConnectionError] = useState(false);
   /** ข้อความ error จริงจาก Backend (ใช้แสดงเมื่อ connectionError เพื่อช่วยดีบัก) */
   const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
+  /** ข้อความ error สำหรับกรณี auth/policy (เช่น เตือนครั้งที่ 2, ถูก suspend) */
+  const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number>(0);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const isSubmitting = isActionBusy('login');
 
   const users = getAllUsers();
 
   const handleLoginSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (Date.now() < lockedUntil) return;
+    if (Date.now() < lockedUntil || isSubmitting) return;
+    runAction('login', async () => {
 
     if (isApiMode()) {
       setConnectionError(false);
       setConnectionErrorMessage(null);
-      apiLogin(email.trim(), password).then(({ user, token }) => {
+      setAuthErrorMessage(null);
+      await apiLogin(email.trim(), password).then(({ user, token }) => {
         setAttempts(0);
         setToken(token);
         const normalized = normalizeUser(user as Record<string, unknown>);
         saveCurrentUser(normalized);
-        loadFromApi().then(() => onLogin(normalized));
+        return loadFromApi().then(() => onLogin(normalized));
       }).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         // status >= 500 = เซิร์ฟเวอร์/DB ขัดข้อง, status === 0 = ติดต่อ Backend ไม่ได้ (fetch ล้ม)
@@ -86,18 +52,27 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           (err instanceof ApiError && (err.status >= 500 || err.status === 0)) ||
           /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|Failed to fetch|NetworkError|เซิร์ฟเวอร์ขัดข้อง|connection|timeout|ฐานข้อมูล|database/i.test(msg);
         setConnectionError(!!isDbOrNetwork);
-        setConnectionErrorMessage(msg || null);
+        setConnectionErrorMessage(isDbOrNetwork ? (msg || null) : null);
+        setAuthErrorMessage(!isDbOrNetwork ? (msg || 'ไม่สามารถเข้าสู่ระบบได้') : null);
         const next = attempts + 1;
         setAttempts(next);
         setIsError(true);
-        setTimeout(() => setIsError(false), 3000);
+        setTimeout(() => setIsError(false), 4000);
+        // UI lockout (client-side) — backend จะเป็นตัวบังคับ policy suspend ในโหมด API อยู่แล้ว
         if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
       });
       return;
     }
 
-    const foundUser = users.find(u => u.email === email.trim() && u.password === password);
+    const emailTrim = email.trim();
+    const byEmail = users.find(u => u.email === emailTrim);
+    const foundUser = users.find(u => u.email === emailTrim && u.password === password);
     if (foundUser) {
+      if ((foundUser as User).isSuspended) {
+        setIsError(true);
+        setTimeout(() => setIsError(false), 4000);
+        return;
+      }
       setAttempts(0);
       saveCurrentUser(foundUser);
       onLogin(foundUser);
@@ -105,13 +80,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       const next = attempts + 1;
       setAttempts(next);
       setIsError(true);
-      setTimeout(() => setIsError(false), 3000);
-      if (next >= MAX_ATTEMPTS) {
-        setLockedUntil(Date.now() + LOCKOUT_MS);
-        setTimeout(() => setAttempts(0), LOCKOUT_MS);
+      setTimeout(() => setIsError(false), 4000);
+      // Local mode: suspend after 3 failed attempts (per-user by email)
+      if (byEmail && next >= MAX_ATTEMPTS) {
+        const updated = { ...byEmail, isSuspended: true, failedLoginAttempts: next } as User;
+        updateUser(updated);
+      } else if (byEmail) {
+        const updated = { ...byEmail, failedLoginAttempts: next } as User;
+        updateUser(updated);
       }
+      if (next >= MAX_ATTEMPTS) setLockedUntil(Date.now() + LOCKOUT_MS);
     }
-  }, [email, password, attempts, lockedUntil, users, onLogin]);
+    });
+  }, [email, password, attempts, lockedUntil, users, onLogin, isSubmitting]);
 
   const handleDemoClick = (user: User) => {
     setEmail(user.email);
@@ -135,27 +116,38 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
           <form onSubmit={handleLoginSubmit} className="space-y-5">
+            <p className="text-[11px] font-bold text-gray-500">
+              <span className="text-red-500">*</span> Required field
+            </p>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
               <input 
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.email}
                 placeholder="email@b-connex.net"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
+              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.email}</p>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                Password <span className="text-red-500">*</span>
+              </label>
               <input 
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.password}
                 placeholder={isApiMode() ? 'รหัสผ่าน = ID พนักงาน (เช่น 001, 002)' : 'รหัสผ่าน (ID พนักงาน)'}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
+              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.password}</p>
               {isApiMode() && (
                 <p className="mt-1 text-[10px] text-gray-500">ถ้าใช้ข้อมูลจาก seed: รหัสผ่านคือ ID 3 หลัก (001, 002, 003 ...)</p>
               )}
@@ -166,7 +158,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <p>
                   {connectionError
                     ? 'ติดต่อฐานข้อมูลไม่ได้ กรุณาลองอีกครั้งใน 15 นาที'
-                    : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'}
+                    : (authErrorMessage || (attempts === 2
+                      ? 'ท่านสามารถลงชื่อเข้าใช้งานได้อีกเพียง 1 ครั้ง หากกรอกข้อมูลไม่ถูกต้องอีก ระบบจะระงับการใช้งานบัญชีของท่านชั่วคราว และโปรดติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ'
+                      : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'))}
                 </p>
                 {connectionError && connectionErrorMessage && (
                   <p className="mt-1 font-normal text-red-600 break-all">สาเหตุ: {connectionErrorMessage}</p>
@@ -179,10 +173,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <button 
               type="submit"
-              disabled={isLocked}
+              disabled={isLocked || isSubmitting}
+              aria-busy={isSubmitting}
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-blue-200 disabled:opacity-50 disabled:pointer-events-none"
             >
-              {isLocked ? 'กรุณารอสักครู่...' : 'เข้าสู่ระบบ'}
+              {isLocked ? 'กรุณารอสักครู่...' : isSubmitting ? 'กำลังตรวจสอบ Authentication...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
 

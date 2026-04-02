@@ -22,6 +22,26 @@ export const STATUS_COLORS: Record<LeaveStatus, string> = {
   [LeaveStatus.REJECTED]: 'bg-red-100 text-red-800',
 };
 
+/** มาตรฐานความยาวสูงสุดของฟิลด์ข้อความ (ใช้ร่วมกันทั้งระบบ) */
+export const FIELD_MAX_LENGTHS = {
+  employeeName: 60,
+  email: 30,
+  password: 64,
+  position: 30,
+  department: 50,
+  taskLabel: 50,
+  leaveTypeLabel: 50,
+  expenseTypeLabel: 50,
+  holidayName: 50,
+  leaveReason: 200,
+  approvalComment: 200,
+  searchText: 60,
+  expenseDetail: 200,
+  expenseClaimId: 12,
+  projectCode: 20,
+  projectName: 120,
+} as const;
+
 /**
  * รายการวันหยุดประจำปี 2569 ตามประกาศบริษัท (Map: yyyy-mm-dd -> Holiday Name)
  */

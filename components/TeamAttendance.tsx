@@ -1,9 +1,12 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, UserRole } from '../types';
-import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
+import { calculateLatePenaltyDays, getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
 import { isApiMode } from '../api';
 import DatePicker from './DatePicker';
+import { formatYmdAsDdMmBe, formatTimeAsHm } from '../utils';
+import TablePagination, { useTablePagination } from './TablePagination';
+import { FIELD_MAX_LENGTHS } from '../constants';
 
 interface TeamAttendanceProps {
   manager: User;
@@ -56,7 +59,15 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
         userName: subordinates.find(s => s.id === r.userId)?.name || 'Unknown',
         department: subordinates.find(s => s.id === r.userId)?.department || '-'
       }))
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => {
+        const byDate = b.date.localeCompare(a.date);
+        if (byDate !== 0) return byDate;
+        const byName = a.userName.localeCompare(b.userName, 'th');
+        if (byName !== 0) return byName;
+        const byIn = (a.checkIn ?? '').localeCompare(b.checkIn ?? '');
+        if (byIn !== 0) return byIn;
+        return String(a.id).localeCompare(String(b.id));
+      });
   }, [subordinates, reloadTick]);
 
   const filteredRecords = useMemo(() => {
@@ -68,6 +79,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
       return true;
     });
   }, [teamRecords, nameQuery, startDate, endDate]);
+  const attendancePagination = useTablePagination(filteredRecords);
 
   return (
     <div className="bg-white rounded-[32px] shadow-sm border border-gray-200 overflow-hidden">
@@ -96,9 +108,11 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 type="text"
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.searchText}
                 placeholder="พิมพ์ชื่อหรือบางส่วนของชื่อ..."
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-full"
               />
+              <p className="text-[10px] text-gray-400 mt-1">Max Length = {FIELD_MAX_LENGTHS.searchText}</p>
             </div>
             <div className="w-full sm:w-[220px]">
               <DatePicker
@@ -106,7 +120,6 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 value={startDate}
                 onChange={setStartDate}
                 maxDate={endDate || undefined}
-                placeholder="เลือกวันที่เริ่มต้น"
               />
             </div>
             <div className="w-full sm:w-[220px]">
@@ -115,7 +128,6 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 value={endDate}
                 onChange={setEndDate}
                 minDate={startDate || undefined}
-                placeholder="เลือกวันที่สิ้นสุด"
               />
             </div>
           </div>
@@ -147,7 +159,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredRecords.map((rec) => {
+            {attendancePagination.pagedItems.map((rec) => {
               let hoursText = '-';
               if (rec.checkIn && rec.checkOut) {
                 const start = new Date(`${rec.date}T${rec.checkIn}`);
@@ -165,21 +177,17 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                     <div className="text-[10px] text-gray-400 font-bold uppercase">{rec.department}</div>
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-700 text-sm">
-                    {new Date(rec.date).toLocaleDateString('th-TH', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {formatYmdAsDdMmBe(rec.date)}
                   </td>
                   <td
                     className={`px-6 py-4 text-center font-black text-sm ${
                       rec.isLate ? 'text-rose-600' : 'text-emerald-600'
                     }`}
                   >
-                    {rec.checkIn || '-'}
+                    {formatTimeAsHm(rec.checkIn)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-900 text-sm">
-                    {rec.checkOut || '-'}
+                    {formatTimeAsHm(rec.checkOut)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-800 text-sm">
                     {hoursText}
@@ -191,7 +199,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                           มาสาย
                         </span>
                         <span className="text-[9px] text-rose-400 font-bold mt-1 tracking-tighter">
-                          หักพักร้อน 0.25 วัน
+                          หักพักร้อน {calculateLatePenaltyDays(rec.checkIn)} วัน
                         </span>
                       </div>
                     ) : (
@@ -215,6 +223,16 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             )}
           </tbody>
         </table>
+        <TablePagination
+          page={attendancePagination.page}
+          pageSize={attendancePagination.pageSize}
+          totalItems={attendancePagination.totalItems}
+          totalPages={attendancePagination.totalPages}
+          rangeStart={attendancePagination.rangeStart}
+          rangeEnd={attendancePagination.rangeEnd}
+          onPageChange={attendancePagination.setPage}
+          onPageSizeChange={attendancePagination.setPageSize}
+        />
         {isLoading && (
           <div className="px-6 py-4 text-center text-gray-500 text-xs font-bold">
             กำลังโหลดข้อมูลการเข้างานของทีม...
