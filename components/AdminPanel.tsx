@@ -82,6 +82,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newExpenseLabel, setNewExpenseLabel] = useState('');
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
+  const resetAddEmployeeForm = () => {
+    setNewName('');
+    setNewEmail('');
+    setNewPassword('');
+    setNewRole(UserRole.EMPLOYEE);
+    setNewGender('male');
+    setNewPosition('');
+    setNewDepartment('');
+    setNewJoinDate('');
+    setNewManagerId('');
+  };
+
+  const openAddEmployeeModal = () => {
+    resetAddEmployeeForm();
+    setShowAddModal(true);
+  };
+
+  const closeAddEmployeeModal = () => {
+    setShowAddModal(false);
+    resetAddEmployeeForm();
+  };
+
+  const resetAddLeaveTypeForm = () => {
+    setNewLTLabel('');
+    setNewLTApplicable('both');
+    setNewLTQuota('0');
+  };
+
+  const openAddLeaveTypeModal = () => {
+    resetAddLeaveTypeForm();
+    setShowAddLeaveType(true);
+  };
+
+  const closeAddLeaveTypeModal = () => {
+    setShowAddLeaveType(false);
+    resetAddLeaveTypeForm();
+  };
+
   const refreshUsers = () => setUsers(getAllUsers());
 
   useEffect(() => {
@@ -378,16 +416,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       const latestUsers = getAllUsers();
       setUsers(latestUsers);
       refreshUsers();
-      setShowAddModal(false);
-      setNewName('');
-      setNewEmail('');
-      setNewPassword('');
-      setNewRole(UserRole.EMPLOYEE);
-      setNewGender('male');
-      setNewPosition('');
-      setNewDepartment('');
-      setNewJoinDate('');
-      setNewManagerId('');
+      closeAddEmployeeModal();
       showAlert('เพิ่มพนักงานใหม่เรียบร้อยแล้ว');
     });
   };
@@ -427,10 +456,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           await (result as Promise<LeaveTypeDefinition>);
         }
         refreshLeaveTypes();
-        setShowAddLeaveType(false);
-        setNewLTLabel('');
-        setNewLTApplicable('both');
-        setNewLTQuota('0');
+        closeAddLeaveTypeModal();
         showAlert('เพิ่มประเภทวันลาเรียบร้อยแล้ว');
       } catch {
         showAlert('ไม่สามารถเพิ่มได้ กรุณาลองใหม่');
@@ -848,7 +874,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowAddModal(true)}
+                onClick={openAddEmployeeModal}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-emerald-700 transition shadow-lg"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -1047,7 +1073,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               จัดการประเภทวันลา
             </h2>
-            <button type="button" onClick={() => setShowAddLeaveType(true)} className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition">
+            <button type="button" onClick={openAddLeaveTypeModal} className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               เพิ่มประเภทวันลา
             </button>
@@ -1189,7 +1215,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   </div>
                   <div className="flex gap-2">
                     <button type="submit" disabled={isActionBusy('admin-add-leave-type')} aria-busy={isActionBusy('admin-add-leave-type')} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50">บันทึก</button>
-                    <button type="button" onClick={() => setShowAddLeaveType(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm">ยกเลิก</button>
+                    <button type="button" onClick={closeAddLeaveTypeModal} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm">ยกเลิก</button>
                   </div>
                 </form>
               </div>
@@ -1493,7 +1519,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <button type="submit" disabled={isActionBusy('admin-add-employee')} aria-busy={isActionBusy('admin-add-employee')} className="flex-1 bg-emerald-600 text-white py-3 rounded-2xl font-black text-sm hover:bg-emerald-700 transition disabled:opacity-50">
                   บันทึก
                 </button>
-                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-2xl font-black text-sm hover:bg-gray-200 transition">
+                <button type="button" onClick={closeAddEmployeeModal} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-2xl font-black text-sm hover:bg-gray-200 transition">
                   ยกเลิก
                 </button>
               </div>
