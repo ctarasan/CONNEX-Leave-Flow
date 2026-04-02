@@ -1383,17 +1383,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               เพิ่มพนักงานใหม่
             </h3>
+            <p className="text-[11px] font-bold text-gray-500 mb-4">
+              <span className="text-red-500">*</span> จำเป็นต้องกรอก
+            </p>
             <form onSubmit={handleAddEmployee} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ชื่อ-นามสกุล</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  ชื่อ-นามสกุล <span className="text-red-500">*</span>
+                </label>
                 <input type="text" required value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="นาย/นาง/นางสาว ..." className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">อีเมล</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  อีเมล <span className="text-red-500">*</span>
+                </label>
                 <input type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="email@company.com" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">รหัสผ่าน (ใช้เข้าสู่ระบบ)</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  รหัสผ่าน (ใช้เข้าสู่ระบบ) <span className="text-red-500">*</span>
+                </label>
                 <input type="text" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="รหัสผ่านเริ่มต้น" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1415,15 +1424,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  ตำแหน่ง <span className="text-red-500">*</span>
+                </label>
                 <input type="text" required value={newPosition} onChange={(e) => setNewPosition(e.target.value)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  แผนก <span className="text-red-500">*</span>
+                </label>
                 <input type="text" required value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันเริ่มงาน</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  วันเริ่มงาน <span className="text-red-500">*</span>
+                </label>
                 <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" />
               </div>
               <div>
