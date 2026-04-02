@@ -8,8 +8,14 @@ export const APP_LAST_UPDATED = '1 เม.ย. 2569, 15:51 น.';
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
 const ENV_LABEL = String(import.meta.env.VITE_ENV_LABEL ?? '').trim();
-const IS_PRODUCTION_ENV = String(import.meta.env.VERCEL_ENV ?? '').toLowerCase() === 'production';
-const ENV_SUFFIX = !IS_PRODUCTION_ENV && ENV_LABEL ? ` ( ${ENV_LABEL} )` : '';
+const getEnvSuffix = (): string => {
+  if (ENV_LABEL) return ` (${ENV_LABEL})`;
+  if (typeof window === 'undefined' || !window.location?.hostname) return '';
+  const host = window.location.hostname;
+  const isPreviewHost = /^connex-leave-flow-[a-z0-9-]+\.vercel\.app$/i.test(host);
+  return isPreviewHost ? ' (Preview)' : '';
+};
+const ENV_SUFFIX = getEnvSuffix();
 export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}${ENV_SUFFIX}`;
 
 /** ป้ายชื่อประเภทวันลาอยู่ที่ store (getLeaveTypes) แล้ว ไม่ใช้ค่านี้สำหรับประเภทแบบเดิม */
