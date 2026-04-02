@@ -212,40 +212,81 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     return null;
   };
 
-  const computeVacationQuotaStartAfterLate = (user: User, processYear: number): number => {
-    const jan1 = new Date(processYear, 0, 1, 12, 0, 0);
-    const dec31 = new Date(processYear, 11, 31, 12, 0, 0);
+  const getBangkokTodayParts = (): { year: number; month: number; day: number } => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const get = (type: 'year' | 'month' | 'day') => Number(parts.find((p) => p.type === type)?.value ?? '0');
+    return { year: get('year'), month: get('month'), day: get('day') };
+  };
+
+  const computeVacationEntitlementByRules = (
+    user: User
+  ): { fullYearEntitlement: number; earnedEntitlement: number; processYear: number } => {
+    const { year: processYear, month: todayMonth, day: todayDay } = getBangkokTodayParts();
+    const jan1Time = Date.UTC(processYear, 0, 1, 0, 0, 0);
+    const yearEndTime = Date.UTC(processYear, 11, 31, 0, 0, 0);
+    const todayTime = Date.UTC(processYear, todayMonth - 1, todayDay, 0, 0, 0);
     const normalizedJoinDate = normalizeJoinDateForCalc(user.joinDate);
+
     if (!normalizedJoinDate) {
-      const fallback = Number(getLeaveTypes().find((t) => t.id === 'VACATION')?.defaultQuota ?? 0);
-      return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
+      return { fullYearEntitlement: 0, earnedEntitlement: 0, processYear };
     }
-    const join = new Date(`${normalizedJoinDate}T12:00:00`);
-    const firstAnniv = new Date(join);
-    firstAnniv.setFullYear(firstAnniv.getFullYear() + 1);
 
-    let quotaYear = 0;
-    if (firstAnniv <= jan1) quotaYear = 12;
-    else if (firstAnniv > dec31) quotaYear = 0;
-    else quotaYear = 13 - (firstAnniv.getMonth() + 1);
+    const [joinYearStr, joinMonthStr, joinDayStr] = normalizedJoinDate.split('-');
+    const joinYear = Number(joinYearStr);
+    const joinMonth = Number(joinMonthStr);
+    const joinDay = Number(joinDayStr);
+    if (!joinYear || !joinMonth || !joinDay) {
+      return { fullYearEntitlement: 0, earnedEntitlement: 0, processYear };
+    }
 
-    const latePenalty = getAttendanceRecords(user.id)
-      .filter((r) => String(r.date || '').startsWith(`${processYear}-`) && !!r.checkIn)
-      .reduce((sum, r) => sum + calculateLatePenaltyDays(r.checkIn), 0);
+    const anniversaryYear = joinYear + 1;
+    const anniversaryMonth = joinMonth;
+    const anniversaryDay = joinDay;
+    const anniversaryTime = Date.UTC(anniversaryYear, anniversaryMonth - 1, anniversaryDay, 0, 0, 0);
 
-    return Math.max(0, Number((quotaYear - latePenalty).toFixed(2)));
+    if (anniversaryTime > yearEndTime) {
+      return { fullYearEntitlement: 0, earnedEntitlement: 0, processYear };
+    }
+
+    if (anniversaryTime < jan1Time) {
+      return { fullYearEntitlement: 12, earnedEntitlement: 12, processYear };
+    }
+
+    const base = 12 - anniversaryMonth + 1;
+    const adjustment = anniversaryDay <= 25 ? 0.5 : 1.0;
+    const fullYearEntitlement = Math.max(0, Number((base - adjustment).toFixed(2)));
+    const earnedEntitlement = todayTime < anniversaryTime ? 0 : fullYearEntitlement;
+
+    return {
+      fullYearEntitlement,
+      earnedEntitlement: Number(earnedEntitlement.toFixed(2)),
+      processYear,
+    };
   };
 
   const withRecomputedVacationQuota = async (user: User): Promise<User> => {
-    const processYear = new Date().getFullYear();
+    const { fullYearEntitlement, earnedEntitlement } = computeVacationEntitlementByRules(user);
+    const processYear = getBangkokTodayParts().year;
     if (isApiMode() && user.id) {
       await loadAttendanceForUser(user.id).catch(() => {});
     }
+    const latePenalty = getAttendanceRecords(user.id)
+      .filter((r) => String(r.date || '').startsWith(`${processYear}-`) && !!r.checkIn)
+      .reduce((sum, r) => sum + calculateLatePenaltyDays(r.checkIn), 0);
+    const finalVacationQuota = Math.max(0, Number((earnedEntitlement - latePenalty).toFixed(2)));
+
     return {
       ...user,
       quotas: {
         ...user.quotas,
-        VACATION: computeVacationQuotaStartAfterLate(user, processYear),
+        VACATION: finalVacationQuota,
+        VACATION_FULL_YEAR_ENTITLEMENT: fullYearEntitlement,
+        VACATION_EARNED_ENTITLEMENT: earnedEntitlement,
       },
     };
   };
@@ -434,10 +475,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   };
 
   const handleProcessVacationQuota = () => {
-    const processYear = new Date().getFullYear();
+    const processYear = getBangkokTodayParts().year;
     const beYear = processYear + 543;
     showConfirm(
-      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: quota_start_after_late = quota_${processYear} - late_penalty`,
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: entitlement ตามวันครบ 1 ปี + earned ณ วันนี้ - late_penalty`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
           if (isApiMode()) {
@@ -795,7 +836,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 disabled={isActionBusy('admin-process-vacation-quota')}
                 aria-busy={isActionBusy('admin-process-vacation-quota')}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-amber-500 text-white rounded-2xl font-black text-sm hover:bg-amber-600 transition shadow-lg"
-                title="คำนวณวันลาพักร้อนตั้งต้นของปี และหักมาสายตามกติกา"
+                title="คำนวณโควต้าลาพักร้อนตามวันครบ 1 ปี (กติกาใหม่) และหักมาสายตามกติกา"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 ประมวลผลวันลาพักร้อน
