@@ -4,7 +4,7 @@ import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttenda
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
-import { deleteExpenseType, getExpenseTypes, isApiMode, postExpenseType, postRecalculateVacationQuotaCurrent } from '../api';
+import { deleteExpenseType, getExpenseTypes, getHolidays as getHolidaysFromApi, isApiMode, postExpenseType, postRecalculateVacationQuotaCurrent } from '../api';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import TablePagination, { useTablePagination } from './TablePagination';
 import { FIELD_MAX_LENGTHS } from '../constants';
@@ -65,6 +65,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newLTQuota, setNewLTQuota] = useState('0');
 
   const [holidays, setHolidays] = useState<Record<string, string>>({});
+  const [holidayUpdatedBy, setHolidayUpdatedBy] = useState<Record<string, string>>({});
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayName, setNewHolidayName] = useState('');
   const [latePolicy, setLatePolicy] = useState<AttendanceLatePolicy>(getAttendanceLatePolicy());
@@ -134,8 +135,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         id: String(x.id ?? ''),
         label: String(x.label ?? ''),
         isActive: x.isActive !== false,
+        updatedById: String(x.updatedById ?? x.updated_by ?? ''),
+        updatedByName: String(x.updatedByName ?? x.updated_by_name ?? ''),
       })));
     }).catch(() => {});
+    if (isApiMode()) {
+      getHolidaysFromApi().then((rows) => {
+        if (!Array.isArray(rows)) return;
+        const audit: Record<string, string> = {};
+        for (const item of rows) {
+          if (!item || typeof item !== 'object') continue;
+          const o = item as Record<string, unknown>;
+          const date = String(o.date ?? '').slice(0, 10);
+          if (!date) continue;
+          audit[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+        }
+        setHolidayUpdatedBy(audit);
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -152,8 +169,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         id: String(x.id ?? ''),
         label: String(x.label ?? ''),
         isActive: x.isActive !== false,
+        updatedById: String(x.updatedById ?? x.updated_by ?? ''),
+        updatedByName: String(x.updatedByName ?? x.updated_by_name ?? ''),
       })));
     }).catch(() => showAlert('ไม่สามารถโหลดประเภทค่าใช้จ่ายได้'));
+  };
+  const refreshHolidaysAudit = () => {
+    if (!isApiMode()) return Promise.resolve();
+    return getHolidaysFromApi().then((rows) => {
+      if (!Array.isArray(rows)) return;
+      const audit: Record<string, string> = {};
+      for (const item of rows) {
+        if (!item || typeof item !== 'object') continue;
+        const o = item as Record<string, unknown>;
+        const date = String(o.date ?? '').slice(0, 10);
+        if (!date) continue;
+        audit[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+      }
+      setHolidayUpdatedBy(audit);
+    }).catch(() => {});
   };
   const usersByDepartment = useMemo(() => {
     const map = new Map<string, User[]>();
@@ -557,6 +591,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         await (result as Promise<void>);
       }
       setHolidays(getHolidays());
+      await refreshHolidaysAudit();
       setNewHolidayDate('');
       setNewHolidayName('');
     });
@@ -570,6 +605,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           await (result as Promise<void>);
         }
         setHolidays(getHolidays());
+        await refreshHolidaysAudit();
       });
     }
   };
@@ -796,6 +832,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                       <th className="py-2">รหัส</th>
                       <th className="py-2">ชื่อโครงการ</th>
                       <th className="py-2">PM</th>
+                      <th className="py-2">แก้ไขล่าสุดโดย</th>
                       <th className="py-2 text-right">จัดการ</th>
                     </tr>
                   </thead>
@@ -805,6 +842,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         <td className="py-2 font-black">{p.code}</td>
                         <td className="py-2">{p.name}</td>
                         <td className="py-2">{users.find((u) => u.id === p.projectManagerId)?.name || '-'}</td>
+                        <td className="py-2">{p.updatedByName || '-'}</td>
                         <td className="py-2 text-right"><button onClick={() => handleEditProject(p)} className="text-blue-600 text-xs font-black">แก้ไข</button></td>
                       </tr>
                     ))}
@@ -905,6 +943,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ผู้บังคับบัญชา</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">ลาพักร้อน</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">Suspend</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-right">การจัดการ</th>
                 </tr>
               </thead>
@@ -1024,6 +1063,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                             }`}
                           />
                         </button>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-gray-700">
+                        {user.updatedByName || '-'}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -1152,6 +1194,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ชื่อประเภท</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ใช้กับ</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">โควต้า (วัน/ปี)</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-right">การจัดการ</th>
                 </tr>
               </thead>
@@ -1161,6 +1204,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     <td className="px-6 py-4 font-bold text-gray-900">{lt.label}</td>
                     <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600">{APPLICABLE_LABELS[lt.applicableTo]}</span></td>
                     <td className="px-6 py-4 text-center font-black text-indigo-600">{lt.defaultQuota >= 999 ? 'ไม่จำกัด' : lt.defaultQuota}</td>
+                    <td className="px-6 py-4 font-bold text-gray-700">{lt.updatedByName || '-'}</td>
                     <td className="px-6 py-4 text-right">
                       <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800 mr-2">แก้ไข</button>
                       <button
@@ -1292,7 +1336,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           <div className="space-y-2">
             {expenseTypes.map((t) => (
               <div key={t.id} className="flex items-center justify-between border rounded-xl px-3 py-2">
-                <span className={`text-sm font-bold ${t.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{t.label}</span>
+                <div>
+                  <span className={`text-sm font-bold ${t.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{t.label}</span>
+                  <p className="text-[11px] font-bold text-gray-500">แก้ไขล่าสุดโดย: {t.updatedByName || '-'}</p>
+                </div>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -1392,6 +1439,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   <tr>
                     <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันที่</th>
                     <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันหยุด</th>
+                    <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
                     <th className="px-6 py-4 text-right"></th>
                   </tr>
                 </thead>
@@ -1402,6 +1450,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         {formatYmdAsDdMmBe(date)}
                       </td>
                       <td className="px-6 py-4 font-bold text-gray-900">{holidays[date]}</td>
+                      <td className="px-6 py-4 font-bold text-gray-700">{holidayUpdatedBy[date] || '-'}</td>
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => handleDeleteHoliday(date)}
@@ -1416,7 +1465,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   ))}
                   {sortedHolidayDates.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="px-6 py-12 text-center text-gray-400 font-bold italic">ไม่พบข้อมูลวันหยุด</td>
+                      <td colSpan={4} className="px-6 py-12 text-center text-gray-400 font-bold italic">ไม่พบข้อมูลวันหยุด</td>
                     </tr>
                   )}
                 </tbody>

@@ -362,6 +362,8 @@ export function normalizeUser(u: Record<string, unknown>): User {
     failedLoginAttempts: u.failedLoginAttempts != null
       ? Number(u.failedLoginAttempts) || 0
       : (u.failed_login_attempts != null ? Number(u.failed_login_attempts) || 0 : 0),
+    updatedById: u.updatedById != null ? normalizeUserId(u.updatedById) : (u.updated_by != null ? normalizeUserId(u.updated_by) : undefined),
+    updatedByName: u.updatedByName != null ? String(u.updatedByName) : (u.updated_by_name != null ? String(u.updated_by_name) : undefined),
   };
 }
 /**
@@ -410,6 +412,8 @@ function normalizeLeaveType(t: Record<string, unknown>): LeaveTypeDefinition {
     defaultQuota: t.defaultQuota != null ? Number(t.defaultQuota) : (t.default_quota != null ? Number(t.default_quota) : (initial?.defaultQuota ?? 0)),
     order: t.order != null ? Number(t.order) : (initial?.order ?? 0),
     isActive: t.isActive !== false && t.is_active !== false,
+    updatedById: t.updatedById != null ? normalizeUserId(t.updatedById) : (t.updated_by != null ? normalizeUserId(t.updated_by) : undefined),
+    updatedByName: t.updatedByName != null ? String(t.updatedByName) : (t.updated_by_name != null ? String(t.updated_by_name) : undefined),
   };
 }
 function normalizeNotification(n: Record<string, unknown>): Notification {
@@ -1033,6 +1037,8 @@ function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
     assignedUserIds: Array.from(new Set(assignedUserIds)),
     projectManagerId: managerId,
     isActive: o.isActive !== false,
+    updatedById: o.updatedById != null ? normalizeUserId(o.updatedById) : (o.updated_by != null ? normalizeUserId(o.updated_by) : undefined),
+    updatedByName: o.updatedByName != null ? String(o.updatedByName) : (o.updated_by_name != null ? String(o.updated_by_name) : undefined),
   };
 }
 

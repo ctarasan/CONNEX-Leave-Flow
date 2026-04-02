@@ -85,9 +85,12 @@ router.get('/projects', async (_req, res) => {
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
-         is_active AS "isActive"
-       FROM timesheet_projects
-       ORDER BY code ASC, id ASC`
+         is_active AS "isActive",
+         updated_by AS "updatedById",
+         COALESCE(editor.name, '') AS "updatedByName"
+       FROM timesheet_projects p
+       LEFT JOIN users editor ON editor.id = p.updated_by
+       ORDER BY p.code ASC, p.id ASC`
     );
     res.json(rows);
   } catch (err) {
@@ -115,16 +118,17 @@ router.post('/projects', requireAuth, async (req, res) => {
 
     await pool.query(
       `INSERT INTO timesheet_projects
-        (id, code, name, project_manager_id, assigned_user_ids, task_target_days, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        (id, code, name, project_manager_id, assigned_user_ids, task_target_days, is_active, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
        ON CONFLICT (id) DO UPDATE SET
          code = EXCLUDED.code,
          name = EXCLUDED.name,
          project_manager_id = EXCLUDED.project_manager_id,
          assigned_user_ids = EXCLUDED.assigned_user_ids,
          task_target_days = EXCLUDED.task_target_days,
-         is_active = EXCLUDED.is_active`,
-      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive]
+         is_active = EXCLUDED.is_active,
+         updated_by = EXCLUDED.updated_by`,
+      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive, req.user?.id ?? null]
     );
 
     const { rows } = await pool.query(
@@ -135,9 +139,12 @@ router.post('/projects', requireAuth, async (req, res) => {
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
-         is_active AS "isActive"
-       FROM timesheet_projects
-       WHERE id = $1`,
+         is_active AS "isActive",
+         updated_by AS "updatedById",
+         COALESCE(editor.name, '') AS "updatedByName"
+       FROM timesheet_projects p
+       LEFT JOIN users editor ON editor.id = p.updated_by
+       WHERE p.id = $1`,
       [id]
     );
     res.status(201).json(rows[0] ?? null);

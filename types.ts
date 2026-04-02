@@ -23,6 +23,8 @@ export interface LeaveTypeDefinition {
   defaultQuota: number;
   order: number;
   isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
 }
 
 export interface User {
@@ -42,6 +44,8 @@ export interface User {
   isSuspended?: boolean;
   /** จำนวนครั้งที่ใส่รหัสผ่านผิดสะสม (ใช้สำหรับ policy suspend) */
   failedLoginAttempts?: number;
+  updatedById?: string;
+  updatedByName?: string;
 }
 
 export interface LeaveRequest {
@@ -110,6 +114,8 @@ export interface TimesheetProject {
   assignedUserIds: string[];
   projectManagerId: string;
   isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
 }
 
 export interface TimesheetEntry {
@@ -130,6 +136,8 @@ export interface ExpenseTypeDefinition {
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
+  updatedById?: string;
+  updatedByName?: string;
 }
 
 export interface ExpenseClaimItem {

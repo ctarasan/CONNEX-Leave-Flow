@@ -24,12 +24,16 @@ router.get('/', requireAuth, async (_req, res) => {
     let rows: Record<string, unknown>[];
     try {
       const r = await pool.query(
-        `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
-          sick_quota, personal_quota, vacation_quota, ordination_quota,
-          military_quota, maternity_quota, sterilization_quota, paternity_quota,
-          COALESCE(is_suspended, FALSE) as "isSuspended",
-          COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
-        FROM users ORDER BY id`
+        `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
+          u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota,
+          u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+          u.updated_by as "updatedById",
+          COALESCE(editor.name, '') as "updatedByName",
+          COALESCE(u.is_suspended, FALSE) as "isSuspended",
+          COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
+        FROM users u
+        LEFT JOIN users editor ON editor.id = u.updated_by
+        ORDER BY u.id`
       );
       rows = r.rows as Record<string, unknown>[];
     } catch (qErr) {
@@ -122,11 +126,11 @@ router.post('/', requireAuth, async (req, res) => {
     
     await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
-        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        ON CONFLICT (id) DO NOTHING`,
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
-       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota]
+       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, req.user?.id ?? null]
     );
     res.status(201).json({ id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null });
   } catch (err) {
@@ -186,6 +190,8 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
     if (updates.length === 0) return res.status(400).json({ error: 'ไม่มีฟิลด์ที่อัปเดต' });
+    updates.push(`updated_by = $${i++}`);
+    values.push(req.user.id);
     values.push(id);
     try {
       await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}`, values);
@@ -203,12 +209,16 @@ router.put('/:id', requireAuth, async (req, res) => {
       throw uErr;
     }
     const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
-        sick_quota, personal_quota, vacation_quota, ordination_quota, 
-        military_quota, maternity_quota, sterilization_quota, paternity_quota,
-        COALESCE(is_suspended, FALSE) as "isSuspended",
-        COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
-      FROM users WHERE id = $1`, 
+      `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
+        u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota, 
+        u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+        u.updated_by as "updatedById",
+        COALESCE(editor.name, '') as "updatedByName",
+        COALESCE(u.is_suspended, FALSE) as "isSuspended",
+        COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
+      FROM users u
+      LEFT JOIN users editor ON editor.id = u.updated_by
+      WHERE u.id = $1`, 
       [id]
     );
     if (rows[0]) {
@@ -307,7 +317,8 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       ),
       updated AS (
         UPDATE users u
-        SET vacation_quota = c.earned_entitlement_today
+        SET vacation_quota = c.earned_entitlement_today,
+            updated_by = $1
         FROM calc c
         WHERE u.id = c.id
         RETURNING
@@ -320,7 +331,7 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       )
       SELECT * FROM updated ORDER BY id
       `
-    );
+    , [req.user.id]);
 
     res.json({
       updatedCount: rows.length,
