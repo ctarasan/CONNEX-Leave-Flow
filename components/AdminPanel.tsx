@@ -226,10 +226,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const computeVacationEntitlementByRules = (
     user: User
   ): { fullYearEntitlement: number; earnedEntitlement: number; processYear: number } => {
-    const { year: processYear, month: todayMonth, day: todayDay } = getBangkokTodayParts();
+    const { year: processYear } = getBangkokTodayParts();
     const jan1Time = Date.UTC(processYear, 0, 1, 0, 0, 0);
     const yearEndTime = Date.UTC(processYear, 11, 31, 0, 0, 0);
-    const todayTime = Date.UTC(processYear, todayMonth - 1, todayDay, 0, 0, 0);
     const normalizedJoinDate = normalizeJoinDateForCalc(user.joinDate);
 
     if (!normalizedJoinDate) {
@@ -257,14 +256,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       return { fullYearEntitlement: 12, earnedEntitlement: 12, processYear };
     }
 
-    const base = 12 - anniversaryMonth + 1;
-    const adjustment = anniversaryDay <= 25 ? 0.5 : 1.0;
-    const fullYearEntitlement = Math.max(0, Number((base - adjustment).toFixed(2)));
-    const earnedEntitlement = todayTime < anniversaryTime ? 0 : fullYearEntitlement;
+    // Payroll-based accrual (cutoff day = 25):
+    // - anniversary day <= 25: include anniversary month with start-date adjustment
+    // - anniversary day > 25: first accrual starts next month (no accrual for anniversary month)
+    const isAnniversaryOnOrBeforeCutoff = anniversaryDay <= 25;
+    const firstMonthEntitlement = isAnniversaryOnOrBeforeCutoff
+      ? (joinDay <= 15 ? 1.0 : 0.5)
+      : 0.0;
+    const firstEligibleMonth = isAnniversaryOnOrBeforeCutoff ? anniversaryMonth : (anniversaryMonth + 1);
+    const remainingMonths = firstEligibleMonth <= 12 ? Math.max(0, 12 - firstEligibleMonth) : 0;
+    const fullYearEntitlement = Math.min(12, Number((firstMonthEntitlement + (remainingMonths * 1.0)).toFixed(2)));
+    const earnedEntitlement = fullYearEntitlement;
 
     return {
       fullYearEntitlement,
-      earnedEntitlement: Number(earnedEntitlement.toFixed(2)),
+      earnedEntitlement,
       processYear,
     };
   };
@@ -478,7 +484,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const processYear = getBangkokTodayParts().year;
     const beYear = processYear + 543;
     showConfirm(
-      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: entitlement ตามวันครบ 1 ปี + earned ณ วันนี้ - late_penalty`,
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: accrual รายเดือนตาม cutoff วันที่ 25 และ start-date adjustment - late_penalty`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
           if (isApiMode()) {
@@ -1144,8 +1150,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
                 <h3 className="text-lg font-black text-gray-900 mb-4">เพิ่มประเภทวันลา</h3>
                 <form onSubmit={handleAddLeaveType} className="space-y-4">
+                  <p className="text-[11px] font-bold text-gray-500">
+                    <span className="text-red-500">*</span> Required field
+                  </p>
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ชื่อประเภท</label>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
+                      ชื่อประเภท <span className="text-red-500">*</span>
+                    </label>
                     <input type="text" required value={newLTLabel} onChange={(e) => setNewLTLabel(e.target.value)} placeholder="เช่น ลาคลอด" className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold" />
                   </div>
                   <div>
@@ -1295,15 +1306,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </div>
                 เพิ่มวันหยุด
               </h3>
+              <p className="text-[11px] font-bold text-gray-500 mb-4">
+                <span className="text-red-500">*</span> Required field
+              </p>
               <div className="space-y-6">
                 <DatePicker 
                   label="วันที่"
+                  required
                   value={newHolidayDate}
                   onChange={setNewHolidayDate}
                   placeholder="เลือกวันหยุด"
                 />
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">ชื่อวันหยุด</label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
+                    ชื่อวันหยุด <span className="text-red-500">*</span>
+                  </label>
                   <input 
                     type="text" 
                     required
@@ -1384,7 +1401,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               เพิ่มพนักงานใหม่
             </h3>
             <p className="text-[11px] font-bold text-gray-500 mb-4">
-              <span className="text-red-500">*</span> จำเป็นต้องกรอก
+              <span className="text-red-500">*</span> Required field
             </p>
             <form onSubmit={handleAddEmployee} className="space-y-4">
               <div>
@@ -1439,7 +1456,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   วันเริ่มงาน <span className="text-red-500">*</span>
                 </label>
-                <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" />
+                <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" required />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>

@@ -116,8 +116,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
           <form onSubmit={handleLoginSubmit} className="space-y-5">
+            <p className="text-[11px] font-bold text-gray-500">
+              <span className="text-red-500">*</span> Required field
+            </p>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
               <input 
                 type="email" 
                 value={email}
@@ -128,7 +133,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                Password <span className="text-red-500">*</span>
+              </label>
               <input 
                 type="password" 
                 value={password}

@@ -173,8 +173,13 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <p className="text-[11px] font-bold text-gray-500">
+          <span className="text-red-500">*</span> Required field
+        </p>
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">ประเภทการลา</label>
+          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
+            ประเภทการลา <span className="text-red-500">*</span>
+          </label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
@@ -192,6 +197,7 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <DatePicker
             label="จากวันที่"
+            required
             value={startDate}
             onChange={setStartDate}
             minDate={isSickLeave ? undefined : todayStr}
@@ -199,6 +205,7 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
           />
           <DatePicker
             label="ถึงวันที่"
+            required
             value={endDate}
             onChange={setEndDate}
             minDate={startDate || (isSickLeave ? undefined : todayStr)}
@@ -214,7 +221,9 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
         )}
 
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">เหตุผลประกอบการลา</label>
+          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
+            เหตุผลประกอบการลา <span className="text-red-500">*</span>
+          </label>
           <textarea required rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 outline-none transition text-sm font-bold text-gray-800 placeholder:text-gray-300" placeholder="โปรระบุรายละเอียด..." aria-describedby="reason-hint" />
           <p id="reason-hint" className="text-[10px] text-gray-400 mt-1">{reason.length}/2000</p>
         </div>

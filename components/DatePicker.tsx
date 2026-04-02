@@ -6,6 +6,7 @@ interface DatePickerProps {
   value: string;
   onChange: (value: string) => void;
   label: string;
+  required?: boolean;
   minDate?: string;
   maxDate?: string;
   placeholder?: string;
@@ -21,6 +22,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
   value,
   onChange,
   label,
+  required = false,
   minDate,
   maxDate,
   placeholder = 'วว/ดด/ปปปป',
@@ -268,7 +270,12 @@ const DatePicker: React.FC<DatePickerProps> = ({
 
   return (
     <div className="relative" ref={containerRef}>
-      {label ? <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">{label}</label> : null}
+      {label ? (
+        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
+          {label}
+          {required ? <span className="text-red-500"> *</span> : null}
+        </label>
+      ) : null}
       <div
         onClick={() => { setIsOpen(!isOpen); setViewMode('calendar'); }}
         className={boxClass}
