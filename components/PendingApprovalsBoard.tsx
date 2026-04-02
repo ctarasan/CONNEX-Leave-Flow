@@ -252,7 +252,7 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
           placeholder="ค้นหาผู้ขอ..."
           className="ml-auto min-w-[220px] px-3 py-2 border rounded-lg text-xs font-bold"
         />
-        <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
+        <span className="text-[10px] text-gray-400">ค้นหา (Max Length = {FIELD_MAX_LENGTHS.searchText})</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -310,6 +310,9 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
                 </div>
               )}
               <div className="space-y-3">
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  ความเห็นเพิ่มเติม (Max Length = {FIELD_MAX_LENGTHS.approvalComment})
+                </label>
                 <input
                   type="text"
                   placeholder="ใส่ความเห็นเพิ่มเติมเพื่อแจ้งพนักงาน..."
@@ -318,7 +321,6 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
                   value={commentById[item.id] || ''}
                   onChange={(e) => setCommentById((prev) => ({ ...prev, [item.id]: e.target.value }))}
                 />
-                <p className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.approvalComment}</p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleApprove(item)}

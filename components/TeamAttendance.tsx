@@ -102,7 +102,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
           <div className="flex flex-col sm:flex-row gap-2 flex-1">
             <div className="flex flex-col">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                ชื่อพนักงาน
+                ชื่อพนักงาน (Max Length = {FIELD_MAX_LENGTHS.searchText})
               </label>
               <input
                 type="text"
@@ -112,7 +112,6 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 placeholder="พิมพ์ชื่อหรือบางส่วนของชื่อ..."
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-full"
               />
-              <p className="text-[10px] text-gray-400 mt-1">Max Length = {FIELD_MAX_LENGTHS.searchText}</p>
             </div>
             <div className="w-full sm:w-[220px]">
               <DatePicker
