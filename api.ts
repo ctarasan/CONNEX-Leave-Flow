@@ -3,7 +3,13 @@
  * Multi-user: หลัง login เก็บ token ใน sessionStorage และส่งใน Authorization ทุก request
  */
 
-const BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+const PROD_BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
+  ? String(import.meta.env.VITE_PREVIEW_API_URL).trim().replace(/\/$/, '')
+  : '';
+const VERCEL_ENV = typeof import.meta !== 'undefined' && import.meta.env?.VERCEL_ENV
+  ? String(import.meta.env.VERCEL_ENV).trim().toLowerCase()
+  : '';
 
 function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
@@ -15,7 +21,9 @@ function getEffectiveApiBase(): string {
     // Support both the main alias and generated Vercel preview domains for this frontend project.
     const isConnexFrontendHost = /^connex-leave-flow(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host);
     if (isConnexFrontendHost && (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app'))) {
-      return BACKEND_URL;
+      // For Preview deployments, point to preview backend only (do not fall back to production backend).
+      if (VERCEL_ENV === 'preview') return PREVIEW_BACKEND_URL;
+      return PROD_BACKEND_URL;
     }
   }
   return fromEnv;
