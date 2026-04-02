@@ -4,6 +4,7 @@ import { approveExpenseClaim, getExpenseClaimById, getExpenseClaims, getExpenseT
 import { getAllUsers, getLeaveTypes, getTimesheetProjectsForUser, updateRequestStatus } from '../store';
 import { formatBangkokDdMmBeTime, formatYmdAsDdMmBe } from '../utils';
 import { useAsyncAction } from '../hooks/useAsyncAction';
+import { FIELD_MAX_LENGTHS } from '../constants';
 
 type TabKey = 'ALL' | 'LEAVE' | 'EXPENSE';
 
@@ -247,9 +248,11 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          maxLength={FIELD_MAX_LENGTHS.searchText}
           placeholder="ค้นหาผู้ขอ..."
           className="ml-auto min-w-[220px] px-3 py-2 border rounded-lg text-xs font-bold"
         />
+        <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -310,10 +313,12 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
                 <input
                   type="text"
                   placeholder="ใส่ความเห็นเพิ่มเติมเพื่อแจ้งพนักงาน..."
+                  maxLength={FIELD_MAX_LENGTHS.approvalComment}
                   className="w-full p-3 text-sm bg-white border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 font-bold"
                   value={commentById[item.id] || ''}
                   onChange={(e) => setCommentById((prev) => ({ ...prev, [item.id]: e.target.value }))}
                 />
+                <p className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.approvalComment}</p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleApprove(item)}

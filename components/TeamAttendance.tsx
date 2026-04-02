@@ -6,6 +6,7 @@ import { isApiMode } from '../api';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe, formatTimeAsHm } from '../utils';
 import TablePagination, { useTablePagination } from './TablePagination';
+import { FIELD_MAX_LENGTHS } from '../constants';
 
 interface TeamAttendanceProps {
   manager: User;
@@ -107,9 +108,11 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                 type="text"
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.searchText}
                 placeholder="พิมพ์ชื่อหรือบางส่วนของชื่อ..."
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-full"
               />
+              <p className="text-[10px] text-gray-400 mt-1">Max Length = {FIELD_MAX_LENGTHS.searchText}</p>
             </div>
             <div className="w-full sm:w-[220px]">
               <DatePicker

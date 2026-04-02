@@ -17,6 +17,7 @@ import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import TablePagination, { useTablePagination } from './TablePagination';
+import { FIELD_MAX_LENGTHS } from '../constants';
 
 type RangePreset = 'today' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 const normalizeId = (raw: unknown): string => {
@@ -498,13 +499,16 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
             <input
               value={claimId}
               onChange={(e) => setClaimId(e.target.value)}
+              maxLength={FIELD_MAX_LENGTHS.expenseClaimId}
               placeholder="สร้างใหม่อัตโนมัติ"
               disabled={Boolean(claimId)}
               className={`mt-1 w-full border rounded-lg px-3 py-2 text-sm ${claimId ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
             />
+            <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.expenseClaimId}</p>
           </label>
           <label className="text-xs font-bold text-gray-600">ชื่อพนักงานผู้ขอเบิก
-            <input value={currentUser.name} disabled className="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-gray-50" />
+            <input value={currentUser.name} maxLength={FIELD_MAX_LENGTHS.employeeName} disabled className="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-gray-50" />
+            <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.employeeName}</p>
           </label>
           <div className="text-xs font-bold text-gray-600">
             <DatePicker
@@ -526,7 +530,7 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                 <th className="px-3 py-2">วันที่</th>
                 <th className="px-3 py-2">โครงการ</th>
                 <th className="px-3 py-2">ประเภทค่าใช้จ่าย</th>
-                <th className="px-3 py-2">รายละเอียด</th>
+                <th className="px-3 py-2">รายละเอียด (Max Length = {FIELD_MAX_LENGTHS.expenseDetail})</th>
                 <th className="px-3 py-2 text-right">ยอดเงิน</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -556,7 +560,7 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
                       {activeExpenseTypes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
                   </td>
-                  <td className="px-3 py-2"><input value={it.detail} onChange={(e) => updateItem(it.id, { detail: e.target.value })} className="w-full border rounded px-2 py-1" /></td>
+                  <td className="px-3 py-2"><input value={it.detail} maxLength={FIELD_MAX_LENGTHS.expenseDetail} onChange={(e) => updateItem(it.id, { detail: e.target.value })} className="w-full border rounded px-2 py-1" /></td>
                   <td className="px-3 py-2"><input type="number" min={0} value={it.amount} onChange={(e) => updateItem(it.id, { amount: Number(e.target.value || 0) })} className="w-full border rounded px-2 py-1 text-right" /></td>
                   <td className="px-3 py-2"><button onClick={() => removeItem(it.id)} className="text-xs text-red-600 font-bold">ลบ</button></td>
                 </tr>
@@ -610,9 +614,11 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
           <input
             value={requesterQuery}
             onChange={(e) => setRequesterQuery(e.target.value)}
+            maxLength={FIELD_MAX_LENGTHS.searchText}
             placeholder="ระบุผู้ขอเบิก (พิมพ์ชื่อบางส่วน)"
             className="border rounded-lg px-2 py-1 text-xs min-w-[220px]"
           />
+          <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
           <div className="min-w-[130px]"><DatePicker label="" value={fromDate} onChange={(v) => { setPreset('custom'); setFromDate(v); }} size="compact" /></div>
           <div className="min-w-[130px]"><DatePicker label="" value={toDate} onChange={(v) => { setPreset('custom'); setToDate(v); }} size="compact" /></div>
           {canUseScopeFilter && (

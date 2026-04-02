@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { User } from '../types';
-import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from '../constants';
+import { APP_TITLE_WITH_VERSION, APP_LAST_UPDATED, FIELD_MAX_LENGTHS } from '../constants';
 import { getAllUsers, saveCurrentUser, loadFromApi, updateUser, normalizeUser } from '../store';
 import { isApiMode, login as apiLogin, setToken, ApiError } from '../api';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -127,10 +127,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.email}
                 placeholder="email@b-connex.net"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
+              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.email}</p>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">
@@ -140,10 +142,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.password}
                 placeholder={isApiMode() ? 'รหัสผ่าน = ID พนักงาน (เช่น 001, 002)' : 'รหัสผ่าน (ID พนักงาน)'}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                 required
               />
+              <p className="mt-1 text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.password}</p>
               {isApiMode() && (
                 <p className="mt-1 text-[10px] text-gray-500">ถ้าใช้ข้อมูลจาก seed: รหัสผ่านคือ ID 3 หลัก (001, 002, 003 ...)</p>
               )}

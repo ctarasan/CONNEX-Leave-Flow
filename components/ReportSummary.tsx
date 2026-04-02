@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import { AttendanceRecord, LeaveRequest, User, UserRole } from '../types';
-import { HOLIDAYS_2026 } from '../constants';
+import { HOLIDAYS_2026, FIELD_MAX_LENGTHS } from '../constants';
 import { getAllUsers, getLeaveTypes, getSubordinateIdSetRecursive, getLeaveRequests, getSubordinateIdsRecursive, loadLeaveRequestsForManager, getAttendanceRecords, loadAttendanceForUser, getLateThresholdTime } from '../store';
 import { isApiMode } from '../api';
 import { formatThaiMonthYear, formatYmdAsDdMmBe, toBuddhistYear, THAI_MONTHS_FULL, currentCEYear } from '../utils';
@@ -620,8 +620,10 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                 placeholder="ค้นหาชื่อพนักงาน (บางส่วนของชื่อ)..."
                 value={historyNameQuery}
                 onChange={(e) => setHistoryNameQuery(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.searchText}
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-56 md:w-72"
               />
+              <span className="text-[10px] text-gray-400">Max Length = {FIELD_MAX_LENGTHS.searchText}</span>
             </div>
 
             <div className="flex items-center justify-between gap-3 flex-wrap">

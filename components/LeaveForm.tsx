@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, LeaveStatus } from '../types';
 import { useAlert } from '../AlertContext';
-import { HOLIDAYS_2026 } from '../constants';
+import { HOLIDAYS_2026, FIELD_MAX_LENGTHS } from '../constants';
 import { saveLeaveRequest, getLeaveRequests, getLeaveTypesForGender, getDefaultQuotaForLeaveType } from '../store';
 import DatePicker from './DatePicker';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -117,7 +117,7 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
     e.preventDefault();
     const trimmedReason = reason.trim();
     if (validationMessage || !startDate || !endDate || !trimmedReason) return;
-    if (trimmedReason.length > 2000) return;
+    if (trimmedReason.length > FIELD_MAX_LENGTHS.leaveReason) return;
     await runAction('submit-leave', async () => {
       console.log('🔵 [LeaveForm] กำลังส่งคำขอลา...');
       try {
@@ -224,8 +224,8 @@ const LeaveForm: React.FC<LeaveFormProps> = ({ user, onSuccess }) => {
           <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
             เหตุผลประกอบการลา <span className="text-red-500">*</span>
           </label>
-          <textarea required rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 outline-none transition text-sm font-bold text-gray-800 placeholder:text-gray-300" placeholder="โปรระบุรายละเอียด..." aria-describedby="reason-hint" />
-          <p id="reason-hint" className="text-[10px] text-gray-400 mt-1">{reason.length}/2000</p>
+          <textarea required rows={3} maxLength={FIELD_MAX_LENGTHS.leaveReason} value={reason} onChange={(e) => setReason(e.target.value)} className="w-full p-4 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 outline-none transition text-sm font-bold text-gray-800 placeholder:text-gray-300" placeholder="โปรระบุรายละเอียด..." aria-describedby="reason-hint" />
+          <p id="reason-hint" className="text-[10px] text-gray-400 mt-1">{reason.length}/{FIELD_MAX_LENGTHS.leaveReason} • Max Length = {FIELD_MAX_LENGTHS.leaveReason}</p>
         </div>
 
         {validationMessage && (
