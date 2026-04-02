@@ -390,6 +390,21 @@ export async function deleteUser(id: string): Promise<void> {
   }
 }
 
+export async function postRecalculateVacationQuotaCurrent(): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+  const res = await fetchWithAuth(`${API_BASE}/api/users/recalculate-vacation-quota-current`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ประมวลผลโควต้าลาพักร้อนไม่สำเร็จ');
+  }
+  const data = await res.json().catch(() => ({})) as { updatedCount?: unknown; users?: unknown };
+  return {
+    updatedCount: Number(data.updatedCount) || 0,
+    users: Array.isArray(data.users) ? (data.users as Record<string, unknown>[]) : [],
+  };
+}
+
 export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/leave-types`, {
     method: 'PUT',

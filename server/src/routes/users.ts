@@ -237,6 +237,101 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
+
+    const { rows } = await pool.query(
+      `
+      WITH ctx AS (
+        SELECT
+          (now() AT TIME ZONE 'Asia/Bangkok')::date AS today_bkk,
+          EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int AS curr_year
+      ),
+      base AS (
+        SELECT
+          u.id,
+          u.join_date::date AS start_date,
+          (u.join_date::date + INTERVAL '1 year')::date AS anniversary_date,
+          make_date(c.curr_year, 1, 1) AS year_start,
+          make_date(c.curr_year, 12, 31) AS year_end,
+          CASE
+            WHEN EXTRACT(DAY FROM c.today_bkk)::int > 25 THEN EXTRACT(MONTH FROM c.today_bkk)::int
+            ELSE EXTRACT(MONTH FROM c.today_bkk)::int - 1
+          END AS closed_month
+        FROM users u
+        CROSS JOIN ctx c
+        WHERE u.join_date IS NOT NULL
+      ),
+      calc AS (
+        SELECT
+          b.id,
+          CASE
+            WHEN b.anniversary_date > b.year_end THEN 0.00
+            WHEN b.anniversary_date < b.year_start THEN 12.00
+            ELSE LEAST(
+              12.00,
+              (
+                CASE
+                  WHEN EXTRACT(MONTH FROM b.anniversary_date)::int <= GREATEST(0, b.closed_month)
+                   AND EXTRACT(DAY FROM b.anniversary_date)::int <= 25
+                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
+                  ELSE 0.00
+                END
+                +
+                GREATEST(
+                  0,
+                  GREATEST(0, b.closed_month) - EXTRACT(MONTH FROM b.anniversary_date)::int
+                )::numeric
+              )
+            )
+          END::numeric(10,2) AS earned_entitlement_today,
+          CASE
+            WHEN b.anniversary_date > b.year_end THEN 0.00
+            WHEN b.anniversary_date < b.year_start THEN 12.00
+            ELSE LEAST(
+              12.00,
+              (
+                CASE
+                  WHEN EXTRACT(DAY FROM b.anniversary_date)::int <= 25
+                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
+                  ELSE 0.00
+                END
+                +
+                GREATEST(0, 12 - EXTRACT(MONTH FROM b.anniversary_date)::int)::numeric
+              )
+            )
+          END::numeric(10,2) AS full_year_entitlement
+        FROM base b
+      ),
+      updated AS (
+        UPDATE users u
+        SET vacation_quota = c.earned_entitlement_today
+        FROM calc c
+        WHERE u.id = c.id
+        RETURNING
+          u.id,
+          u.name,
+          u.join_date AS "joinDate",
+          c.full_year_entitlement AS "fullYearEntitlement",
+          c.earned_entitlement_today AS "earnedEntitlementToday",
+          u.vacation_quota AS "vacationQuota"
+      )
+      SELECT * FROM updated ORDER BY id
+      `
+    );
+
+    res.json({
+      updatedCount: rows.length,
+      users: rows,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
