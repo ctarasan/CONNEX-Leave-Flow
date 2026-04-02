@@ -9,9 +9,12 @@ function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
     ? String(import.meta.env.VITE_API_URL).trim().replace(/\/$/, '')
     : '';
-  if (typeof window !== 'undefined' && window.location?.hostname === 'connex-leave-flow.vercel.app') {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
     const origin = window.location.origin.replace(/\/$/, '');
-    if (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app')) {
+    // Support both the main alias and generated Vercel preview domains for this frontend project.
+    const isConnexFrontendHost = /^connex-leave-flow(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host);
+    if (isConnexFrontendHost && (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app'))) {
       return BACKEND_URL;
     }
   }
