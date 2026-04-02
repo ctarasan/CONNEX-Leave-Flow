@@ -6,3 +6,13 @@ export function rowToCamel<T extends Record<string, unknown>>(row: T): Record<st
   }
   return out;
 }
+
+export function normalizeUserId(raw: unknown): string {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) {
+    return String(parseInt(s, 10)).padStart(3, '0');
+  }
+  return s;
+}

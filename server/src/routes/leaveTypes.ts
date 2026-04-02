@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { normalizeUserId } from '../util.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
@@ -11,7 +18,7 @@ router.get('/', requireAuth, async (_req, res) => {
          lt.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM leave_types lt
-       LEFT JOIN users u ON u.id = lt.updated_by
+       LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('lt.updated_by')}
        ORDER BY lt.id`
     );
     const byKey = new Map<string, Record<string, unknown>>();
@@ -56,16 +63,16 @@ router.put('/', requireAuth, async (req, res) => {
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (id) DO UPDATE
            SET name = $2, color = $3, applicable = $4, updated_at = NOW(), updated_by = $5`,
-        [id, name, color, applicable, req.user?.id ?? null]
+        [id, name, color, applicable, normalizeUserId(req.user?.id) || null]
       );
-      await pool.query(`UPDATE leave_types SET updated_by = $2 WHERE id = $1 AND updated_by IS NULL`, [id, req.user?.id ?? null]);
+      await pool.query(`UPDATE leave_types SET updated_by = $2 WHERE id = $1 AND updated_by IS NULL`, [id, normalizeUserId(req.user?.id) || null]);
     }
     const { rows } = await pool.query(
       `SELECT lt.id, lt.name, lt.color, lt.applicable,
          lt.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM leave_types lt
-       LEFT JOIN users u ON u.id = lt.updated_by
+       LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('lt.updated_by')}
        ORDER BY lt.id`
     );
     const byKey = new Map<string, Record<string, unknown>>();

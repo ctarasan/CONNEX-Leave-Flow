@@ -92,7 +92,7 @@ router.get('/types', requireAuth, async (_req, res) => {
          et.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM expense_types et
-       LEFT JOIN users u ON u.id = et.updated_by
+       LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('et.updated_by')}
        ORDER BY et.label ASC`
     );
     res.json(rows);
@@ -121,7 +121,7 @@ router.post('/types', requireAuth, async (req, res) => {
              updated_by = $4,
              updated_at = NOW()
          WHERE id = $1`,
-        [id, label, isActive, req.user?.id ?? null]
+        [id, label, isActive, normalizeUserId(req.user?.id) || null]
       );
     } else {
       // ถ้าชื่อซ้ำ ให้ถือว่าเป็นการเปิดใช้งาน/อัปเดตรายการเดิมแทน ไม่โยน error
@@ -132,16 +132,16 @@ router.post('/types', requireAuth, async (req, res) => {
            is_active = EXCLUDED.is_active,
            updated_by = $4,
            updated_at = NOW()`,
-        [id, label, isActive, req.user?.id ?? null]
+        [id, label, isActive, normalizeUserId(req.user?.id) || null]
       );
-      await pool.query(`UPDATE expense_types SET updated_by = $2 WHERE label = $1 AND updated_by IS NULL`, [label, req.user?.id ?? null]);
+      await pool.query(`UPDATE expense_types SET updated_by = $2 WHERE label = $1 AND updated_by IS NULL`, [label, normalizeUserId(req.user?.id) || null]);
     }
     const { rows } = await pool.query(
       `SELECT et.id, et.label, et.is_active AS "isActive", et.created_at AS "createdAt", et.updated_at AS "updatedAt",
          et.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM expense_types et
-       LEFT JOIN users u ON u.id = et.updated_by
+       LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('et.updated_by')}
        WHERE et.label = $1
        ORDER BY et.updated_at DESC
        LIMIT 1`,
@@ -161,7 +161,7 @@ router.delete('/types/:id', requireAuth, async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'เฉพาะ Admin เท่านั้น' });
     const id = String(req.params.id ?? '').trim();
-    await pool.query(`UPDATE expense_types SET is_active = FALSE, updated_by = $2, updated_at = NOW() WHERE id = $1`, [id, req.user?.id ?? null]);
+    await pool.query(`UPDATE expense_types SET is_active = FALSE, updated_by = $2, updated_at = NOW() WHERE id = $1`, [id, normalizeUserId(req.user?.id) || null]);
     res.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

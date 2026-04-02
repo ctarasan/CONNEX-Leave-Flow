@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { pool } from '../db.js';
-import { rowToCamel } from '../util.js';
+import { normalizeUserId, rowToCamel } from '../util.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -18,6 +18,12 @@ const quotaOut = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
@@ -32,7 +38,7 @@ router.get('/', requireAuth, async (_req, res) => {
           COALESCE(u.is_suspended, FALSE) as "isSuspended",
           COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
         FROM users u
-        LEFT JOIN users editor ON editor.id = u.updated_by
+        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('u.updated_by')}
         ORDER BY u.id`
       );
       rows = r.rows as Record<string, unknown>[];
@@ -130,7 +136,7 @@ router.post('/', requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        ON CONFLICT (id) DO NOTHING`,
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
-       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, req.user?.id ?? null]
+       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, normalizeUserId(req.user?.id) || null]
     );
     res.status(201).json({ id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null });
   } catch (err) {
@@ -191,7 +197,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     if (updates.length === 0) return res.status(400).json({ error: 'ไม่มีฟิลด์ที่อัปเดต' });
     updates.push(`updated_by = $${i++}`);
-    values.push(req.user.id);
+    values.push(normalizeUserId(req.user.id));
     values.push(id);
     try {
       await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}`, values);
@@ -217,7 +223,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         COALESCE(u.is_suspended, FALSE) as "isSuspended",
         COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
       FROM users u
-      LEFT JOIN users editor ON editor.id = u.updated_by
+      LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('u.updated_by')}
       WHERE u.id = $1`, 
       [id]
     );
@@ -331,7 +337,7 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       )
       SELECT * FROM updated ORDER BY id
       `
-    , [req.user.id]);
+    , [normalizeUserId(req.user.id)]);
 
     res.json({
       updatedCount: rows.length,

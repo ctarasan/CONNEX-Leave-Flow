@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { normalizeUserId as normalizeActorId } from '../util.js';
 
 const router = Router();
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
 
 function normalizeUserId(raw: unknown): string {
   if (raw == null) return '';
@@ -89,7 +96,7 @@ router.get('/projects', async (_req, res) => {
          updated_by AS "updatedById",
          COALESCE(editor.name, '') AS "updatedByName"
        FROM timesheet_projects p
-       LEFT JOIN users editor ON editor.id = p.updated_by
+       LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
        ORDER BY p.code ASC, p.id ASC`
     );
     res.json(rows);
@@ -128,7 +135,7 @@ router.post('/projects', requireAuth, async (req, res) => {
          task_target_days = EXCLUDED.task_target_days,
          is_active = EXCLUDED.is_active,
          updated_by = EXCLUDED.updated_by`,
-      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive, req.user?.id ?? null]
+      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive, normalizeActorId(req.user?.id) || null]
     );
 
     const { rows } = await pool.query(
@@ -143,7 +150,7 @@ router.post('/projects', requireAuth, async (req, res) => {
          updated_by AS "updatedById",
          COALESCE(editor.name, '') AS "updatedByName"
        FROM timesheet_projects p
-       LEFT JOIN users editor ON editor.id = p.updated_by
+       LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
        WHERE p.id = $1`,
       [id]
     );

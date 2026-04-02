@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { normalizeUserId } from '../util.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
@@ -11,7 +18,7 @@ router.get('/', requireAuth, async (_req, res) => {
          h.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM holidays h
-       LEFT JOIN users u ON u.id = h.updated_by
+       LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('h.updated_by')}
        ORDER BY h.date`
     );
     const list = (rows as Array<{ date: string; name: string; updatedById?: string; updatedByName?: string }>).map((r) => ({
@@ -40,7 +47,7 @@ router.post('/', requireAuth, async (req, res) => {
       `INSERT INTO holidays (date, name, updated_by)
        VALUES ($1, $2, $3)
        ON CONFLICT (date) DO UPDATE SET name = $2, updated_at = NOW(), updated_by = $3`,
-      [date, safeName, req.user?.id ?? null]
+      [date, safeName, normalizeUserId(req.user?.id) || null]
     );
     res.status(201).json({ date, name: safeName });
   } catch (err) {
