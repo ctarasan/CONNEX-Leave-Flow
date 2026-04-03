@@ -711,9 +711,33 @@ export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>):
   return saveLeaveTypes(updated);
 };
 
-export const deleteLeaveType = (id: string): void | Promise<void> => {
+export const setLeaveTypeActive = (id: string, active: boolean): void | Promise<void> => {
+  const targetId = String(id || '').toUpperCase();
+  if (isApiMode()) {
+    return api
+      .getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
+        if (idx < 0) throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
+        const next = [...normalized];
+        next[idx] = { ...next[idx], isActive: active };
+        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
+      })
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
-  return saveLeaveTypes(types.map(t => t.id === id ? { ...t, isActive: false } : t));
+  return saveLeaveTypes(
+    types.map((t) => (String(t.id || '').toUpperCase() === targetId ? { ...t, isActive: active } : t))
+  );
+};
+
+export const deleteLeaveType = (id: string): void | Promise<void> => {
+  return setLeaveTypeActive(id, false);
 };
 
 export const getDefaultQuotaForLeaveType = (leaveTypeId: string): number => {

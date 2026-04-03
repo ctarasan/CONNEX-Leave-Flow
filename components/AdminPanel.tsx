@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition, ExpenseTypeDefinition } from '../types';
-import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
+import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, setLeaveTypeActive, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
@@ -540,15 +540,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     });
   };
 
-  const handleDeleteLeaveType = (lt: LeaveTypeDefinition) => {
-    if (!window.confirm(`ปิดใช้ประเภท "${lt.label}" หรือไม่?\n(พนักงานจะไม่เห็นตัวเลือกนี้)`)) return;
-    runAction(`admin-delete-leave-type-${lt.id}`, async () => {
-      const result = deleteLeaveType(lt.id);
-      if (result != null && typeof (result as Promise<void>).then === 'function') {
-        await (result as Promise<void>);
+  const handleToggleLeaveTypeActive = (lt: LeaveTypeDefinition) => {
+    const nextActive = !lt.isActive;
+    showConfirm(
+      nextActive
+        ? `ยืนยันเปิดใช้ประเภท "${lt.label}" อีกครั้งหรือไม่?`
+        : `ยืนยันปิดใช้ประเภท "${lt.label}" หรือไม่?\n(พนักงานจะไม่เห็นตัวเลือกนี้)`,
+      () => {
+        runAction(`admin-toggle-leave-type-${lt.id}`, async () => {
+          const prevLt = lt;
+          setLeaveTypes((cur) => cur.map((t) => (t.id === lt.id ? { ...t, isActive: nextActive } : t)));
+          try {
+            const result = setLeaveTypeActive(lt.id, nextActive);
+            if (result != null && typeof (result as Promise<void>).then === 'function') {
+              await (result as Promise<void>);
+            }
+            refreshLeaveTypes();
+            showAlert(nextActive ? 'เปิดใช้ประเภทวันลาเรียบร้อยแล้ว' : 'ปิดใช้ประเภทวันลาเรียบร้อยแล้ว');
+          } catch {
+            setLeaveTypes((cur) => cur.map((t) => (t.id === lt.id ? prevLt : t)));
+            showAlert('ไม่สามารถอัปเดตสถานะได้ กรุณาลองใหม่');
+          }
+        });
       }
-      refreshLeaveTypes();
-    });
+    );
   };
 
   const handleDeleteEmployee = (user: User) => {
@@ -657,13 +672,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     () => timesheetProjects.filter((p) => p.isActive),
     [timesheetProjects]
   );
-  const activeLeaveTypes = useMemo(
-    () => leaveTypes.filter((t) => t.isActive).sort((a, b) => a.order - b.order),
+  const sortedLeaveTypesForAdmin = useMemo(
+    () => [...leaveTypes].sort((a, b) => (a.order - b.order) || String(a.id).localeCompare(String(b.id))),
     [leaveTypes]
   );
   const projectPagination = useTablePagination(activeProjects);
   const employeePagination = useTablePagination(users);
-  const leaveTypePagination = useTablePagination(activeLeaveTypes);
+  const leaveTypePagination = useTablePagination(sortedLeaveTypesForAdmin);
   const holidayPagination = useTablePagination(sortedHolidayDates);
   const resetProjectForm = () => {
     setEditProject(null);
@@ -1174,28 +1189,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ชื่อประเภท</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ใช้กับ</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">โควต้า (วัน/ปี)</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">ปิดใช้</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
                   <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-right">การจัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {leaveTypePagination.pagedItems.map(lt => (
-                  <tr key={lt.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-bold text-gray-900">{lt.label}</td>
+                  <tr key={lt.id} className={`hover:bg-gray-50 ${lt.isActive ? '' : 'opacity-70'}`}>
+                    <td className={`px-6 py-4 font-bold text-gray-900 ${lt.isActive ? '' : 'line-through decoration-gray-400'}`}>{lt.label}</td>
                     <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600">{APPLICABLE_LABELS[lt.applicableTo]}</span></td>
                     <td className="px-6 py-4 text-center font-black text-indigo-600">{lt.defaultQuota >= 999 ? 'ไม่จำกัด' : lt.defaultQuota}</td>
-                    <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(lt.updatedByName, lt.updatedAt)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800 mr-2">แก้ไข</button>
+                    <td className="px-6 py-4 text-center">
                       <button
                         type="button"
-                        onClick={() => handleDeleteLeaveType(lt)}
-                        disabled={isActionBusy(`admin-delete-leave-type-${lt.id}`)}
-                        aria-busy={isActionBusy(`admin-delete-leave-type-${lt.id}`)}
-                        className="text-xs font-black text-rose-600 hover:text-rose-800 disabled:opacity-40"
+                        role="switch"
+                        aria-checked={lt.isActive === false}
+                        aria-busy={isActionBusy(`admin-toggle-leave-type-${lt.id}`)}
+                        disabled={isActionBusy(`admin-toggle-leave-type-${lt.id}`)}
+                        title={lt.isActive ? 'ปิดใช้: OFF' : 'ปิดใช้: ON'}
+                        onClick={() => handleToggleLeaveTypeActive(lt)}
+                        className={`relative inline-flex h-7 w-14 items-center rounded-full border transition ${
+                          lt.isActive ? 'bg-gray-200 border-gray-300' : 'bg-emerald-500 border-emerald-600'
+                        }`}
                       >
-                        ปิดใช้
+                        <span className="sr-only">ปิดใช้ประเภทวันลา</span>
+                        <span
+                          className={`absolute left-1 text-[10px] font-black tracking-widest text-white transition-opacity ${
+                            lt.isActive ? 'opacity-0' : 'opacity-100'
+                          }`}
+                        >
+                          ON
+                        </span>
+                        <span
+                          className={`absolute right-1 text-[10px] font-black tracking-widest text-gray-500 transition-opacity ${
+                            lt.isActive ? 'opacity-100' : 'opacity-0'
+                          }`}
+                        >
+                          OFF
+                        </span>
+                        <span
+                          className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${
+                            lt.isActive ? 'translate-x-0' : 'translate-x-7'
+                          }`}
+                        />
                       </button>
+                    </td>
+                    <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(lt.updatedByName, lt.updatedAt)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800">แก้ไข</button>
                     </td>
                   </tr>
                 ))}

@@ -17,10 +17,23 @@ type LeaveTypeDbRow = {
   color: string;
   applicable: string;
   defaultQuota?: number | string;
+  isActive?: boolean;
   updatedAt?: string;
   updatedById?: string;
   updatedByName?: string;
 };
+
+function nextLeaveTypeIsActive(body: Record<string, unknown> | undefined, fallback: boolean): boolean {
+  if (!body) return fallback;
+  const raw = body.isActive ?? body.is_active;
+  if (raw === undefined || raw === null) return fallback;
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'number') return raw !== 0;
+  const s = String(raw).toLowerCase();
+  if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
+  if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+  return fallback;
+}
 
 type LeaveTypeCapabilities = {
   auditEnabled: boolean;
@@ -51,6 +64,8 @@ async function readLeaveTypeCapabilities(): Promise<LeaveTypeCapabilities> {
 
 async function ensureLeaveTypeColumns(): Promise<LeaveTypeCapabilities> {
   try {
+    await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`);
+    await pool.query(`UPDATE leave_types SET is_active = COALESCE(is_active, TRUE)`);
     const initial = await readLeaveTypeCapabilities();
     if (!initial.auditEnabled) {
       await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
@@ -76,6 +91,7 @@ async function fetchLeaveTypes(cap: LeaveTypeCapabilities): Promise<LeaveTypeDbR
     const { rows } = await pool.query<LeaveTypeDbRow>(
       `SELECT lt.id, lt.name, lt.color, lt.applicable,
          lt.default_quota AS "defaultQuota",
+         COALESCE(lt.is_active, TRUE) AS "isActive",
          lt.updated_at AS "updatedAt",
          lt.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
@@ -88,6 +104,7 @@ async function fetchLeaveTypes(cap: LeaveTypeCapabilities): Promise<LeaveTypeDbR
   if (cap.auditEnabled) {
     const { rows } = await pool.query<LeaveTypeDbRow>(
       `SELECT lt.id, lt.name, lt.color, lt.applicable,
+         COALESCE(lt.is_active, TRUE) AS "isActive",
          lt.updated_at AS "updatedAt",
          lt.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
@@ -99,12 +116,12 @@ async function fetchLeaveTypes(cap: LeaveTypeCapabilities): Promise<LeaveTypeDbR
   }
   if (cap.quotaEnabled) {
     const { rows } = await pool.query<LeaveTypeDbRow>(
-      `SELECT id, name, color, applicable, default_quota AS "defaultQuota" FROM leave_types ORDER BY id`
+      `SELECT id, name, color, applicable, default_quota AS "defaultQuota", COALESCE(is_active, TRUE) AS "isActive" FROM leave_types ORDER BY id`
     );
     return rows.map((r) => ({ ...r, updatedAt: '', updatedById: '', updatedByName: '' }));
   }
   const { rows } = await pool.query<LeaveTypeDbRow>(
-    `SELECT id, name, color, applicable FROM leave_types ORDER BY id`
+    `SELECT id, name, color, applicable, COALESCE(is_active, TRUE) AS "isActive" FROM leave_types ORDER BY id`
   );
   return rows.map((r) => ({ ...r, updatedAt: '', updatedById: '', updatedByName: '' }));
 }
@@ -126,7 +143,7 @@ function mapLeaveTypes(rows: LeaveTypeDbRow[]) {
     updatedAt: String(r.updatedAt ?? ''),
     updatedById: r.updatedById ?? '',
     updatedByName: r.updatedByName ?? '',
-    isActive: true,
+    isActive: r.isActive !== false,
   }));
 }
 
@@ -156,10 +173,11 @@ router.put('/', requireAuth, async (req, res) => {
       color: string;
       applicable: string;
       defaultQuota?: number | string;
+      isActive?: boolean;
     }>(
       cap.quotaEnabled
-        ? `SELECT id, name, color, applicable, default_quota AS "defaultQuota" FROM leave_types`
-        : `SELECT id, name, color, applicable FROM leave_types`
+        ? `SELECT id, name, color, applicable, default_quota AS "defaultQuota", COALESCE(is_active, TRUE) AS "isActive" FROM leave_types`
+        : `SELECT id, name, color, applicable, COALESCE(is_active, TRUE) AS "isActive" FROM leave_types`
     );
     const existingById = new Map(
       existingRes.rows.map((r) => [String(r.id).toLowerCase(), r])
@@ -170,44 +188,52 @@ router.put('/', requireAuth, async (req, res) => {
       if (!rawId) continue;
       const id = rawId.toLowerCase();
       const prev = existingById.get(id);
+      const bodyT = t as Record<string, unknown>;
       const name = String(t.name ?? t.label ?? prev?.name ?? rawId).trim();
       const color = String(t.color ?? prev?.color ?? '#3b82f6').trim() || '#3b82f6';
       const applicable = String(t.applicable ?? t.applicableTo ?? t.applicable_to ?? prev?.applicable ?? 'both').trim() || 'both';
       const defaultQuotaRaw = Number(t.defaultQuota ?? t.default_quota ?? prev?.defaultQuota ?? 0);
       const defaultQuota = Number.isFinite(defaultQuotaRaw) ? Math.max(0, defaultQuotaRaw) : 0;
+      const nextIsActive = nextLeaveTypeIsActive(bodyT, prev ? prev.isActive !== false : true);
 
       if (!prev) {
         if (cap.auditEnabled && cap.quotaEnabled) {
           await pool.query(
-            `INSERT INTO leave_types (id, name, color, applicable, default_quota, updated_by, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-            [id, name, color, applicable, defaultQuota, actorId]
+            `INSERT INTO leave_types (id, name, color, applicable, default_quota, is_active, updated_by, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+            [id, name, color, applicable, defaultQuota, nextIsActive, actorId]
           );
         } else if (cap.auditEnabled) {
           await pool.query(
-            `INSERT INTO leave_types (id, name, color, applicable, updated_by, updated_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())`,
-            [id, name, color, applicable, actorId]
+            `INSERT INTO leave_types (id, name, color, applicable, is_active, updated_by, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+            [id, name, color, applicable, nextIsActive, actorId]
           );
         } else if (cap.quotaEnabled) {
           await pool.query(
-            `INSERT INTO leave_types (id, name, color, applicable, default_quota)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [id, name, color, applicable, defaultQuota]
+            `INSERT INTO leave_types (id, name, color, applicable, default_quota, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, name, color, applicable, defaultQuota, nextIsActive]
           );
         } else {
           await pool.query(
-            `INSERT INTO leave_types (id, name, color, applicable)
-             VALUES ($1, $2, $3, $4)`,
-            [id, name, color, applicable]
+            `INSERT INTO leave_types (id, name, color, applicable, is_active)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, name, color, applicable, nextIsActive]
           );
         }
-        existingById.set(id, { id, name, color, applicable, defaultQuota });
+        existingById.set(id, { id, name, color, applicable, defaultQuota, isActive: nextIsActive });
         continue;
       }
 
       const prevQuota = Number(prev.defaultQuota ?? 0);
-      const changed = prev.name !== name || prev.color !== color || prev.applicable !== applicable || (cap.quotaEnabled && prevQuota !== defaultQuota);
+      const prevIsActive = prev.isActive !== false;
+      const changed =
+        prev.name !== name ||
+        prev.color !== color ||
+        prev.applicable !== applicable ||
+        (cap.quotaEnabled && prevQuota !== defaultQuota) ||
+        prevIsActive !== nextIsActive;
       if (!changed) continue;
 
       if (cap.auditEnabled && cap.quotaEnabled) {
@@ -217,10 +243,11 @@ router.put('/', requireAuth, async (req, res) => {
                color = $3,
                applicable = $4,
                default_quota = $5,
+               is_active = $6,
                updated_at = NOW(),
-               updated_by = $6
-           WHERE id = $1`,
-          [id, name, color, applicable, defaultQuota, actorId]
+               updated_by = $7
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, name, color, applicable, defaultQuota, nextIsActive, actorId]
         );
       } else if (cap.auditEnabled) {
         await pool.query(
@@ -228,10 +255,11 @@ router.put('/', requireAuth, async (req, res) => {
            SET name = $2,
                color = $3,
                applicable = $4,
+               is_active = $5,
                updated_at = NOW(),
-               updated_by = $5
-           WHERE id = $1`,
-          [id, name, color, applicable, actorId]
+               updated_by = $6
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, name, color, applicable, nextIsActive, actorId]
         );
       } else if (cap.quotaEnabled) {
         await pool.query(
@@ -239,21 +267,23 @@ router.put('/', requireAuth, async (req, res) => {
            SET name = $2,
                color = $3,
                applicable = $4,
-               default_quota = $5
-           WHERE id = $1`,
-          [id, name, color, applicable, defaultQuota]
+               default_quota = $5,
+               is_active = $6
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, name, color, applicable, defaultQuota, nextIsActive]
         );
       } else {
         await pool.query(
           `UPDATE leave_types
            SET name = $2,
                color = $3,
-               applicable = $4
-           WHERE id = $1`,
-          [id, name, color, applicable]
+               applicable = $4,
+               is_active = $5
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, name, color, applicable, nextIsActive]
         );
       }
-      existingById.set(id, { id, name, color, applicable, defaultQuota });
+      existingById.set(id, { id, name, color, applicable, defaultQuota, isActive: nextIsActive });
     }
     const rows = await fetchLeaveTypes(cap);
     res.json(mapLeaveTypes(rows));
@@ -270,71 +300,76 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (!id) return res.status(400).json({ error: 'ต้องมี id' });
     const cap = await ensureLeaveTypeColumns();
 
-    const existing = await pool.query<{ id: string; name: string; color: string; applicable: string; defaultQuota?: number | string }>(
+    const existing = await pool.query<{
+      id: string;
+      name: string;
+      color: string;
+      applicable: string;
+      defaultQuota?: number | string;
+      isActive?: boolean;
+    }>(
       cap.quotaEnabled
-        ? `SELECT id, name, color, applicable, default_quota AS "defaultQuota" FROM leave_types WHERE id = $1 LIMIT 1`
-        : `SELECT id, name, color, applicable FROM leave_types WHERE id = $1 LIMIT 1`,
+        ? `SELECT id, name, color, applicable, default_quota AS "defaultQuota", COALESCE(is_active, TRUE) AS "isActive" FROM leave_types WHERE LOWER(id) = LOWER($1) LIMIT 1`
+        : `SELECT id, name, color, applicable, COALESCE(is_active, TRUE) AS "isActive" FROM leave_types WHERE LOWER(id) = LOWER($1) LIMIT 1`,
       [id]
     );
     const prev = existing.rows[0];
     if (!prev) return res.status(404).json({ error: 'ไม่พบประเภทวันลาที่ต้องการแก้ไข' });
 
-    const nextName = String(req.body?.name ?? req.body?.label ?? prev.name).trim();
-    const nextColor = String(req.body?.color ?? prev.color ?? '#3b82f6').trim() || '#3b82f6';
-    const nextApplicable = String(req.body?.applicable ?? req.body?.applicableTo ?? req.body?.applicable_to ?? prev.applicable ?? 'both').trim() || 'both';
-    const nextDefaultQuotaRaw = Number(req.body?.defaultQuota ?? req.body?.default_quota ?? prev.defaultQuota ?? 0);
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : undefined;
+    const nextName = String(body?.name ?? body?.label ?? prev.name).trim();
+    const nextColor = String(body?.color ?? prev.color ?? '#3b82f6').trim() || '#3b82f6';
+    const nextApplicable = String(body?.applicable ?? body?.applicableTo ?? body?.applicable_to ?? prev.applicable ?? 'both').trim() || 'both';
+    const nextDefaultQuotaRaw = Number(body?.defaultQuota ?? body?.default_quota ?? prev.defaultQuota ?? 0);
     const nextDefaultQuota = Number.isFinite(nextDefaultQuotaRaw) ? Math.max(0, nextDefaultQuotaRaw) : 0;
+    const prevIsActive = prev.isActive !== false;
+    const nextIsActive = nextLeaveTypeIsActive(body, prevIsActive);
 
     const prevDefaultQuota = Number(prev.defaultQuota ?? 0);
-    const changed = prev.name !== nextName || prev.color !== nextColor || prev.applicable !== nextApplicable || (cap.quotaEnabled && prevDefaultQuota !== nextDefaultQuota);
+    const changed =
+      prev.name !== nextName ||
+      prev.color !== nextColor ||
+      prev.applicable !== nextApplicable ||
+      (cap.quotaEnabled && prevDefaultQuota !== nextDefaultQuota) ||
+      prevIsActive !== nextIsActive;
+    const actorId = normalizeUserId(req.user?.id) || null;
     if (changed) {
       if (cap.auditEnabled && cap.quotaEnabled) {
         await pool.query(
           `UPDATE leave_types
-           SET name = $2, color = $3, applicable = $4, default_quota = $5, updated_at = NOW(), updated_by = $6
-           WHERE id = $1`,
-          [id, nextName, nextColor, nextApplicable, nextDefaultQuota, normalizeUserId(req.user?.id) || null]
+           SET name = $2, color = $3, applicable = $4, default_quota = $5, is_active = $6, updated_at = NOW(), updated_by = $7
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, nextName, nextColor, nextApplicable, nextDefaultQuota, nextIsActive, actorId]
         );
       } else if (cap.auditEnabled) {
         await pool.query(
           `UPDATE leave_types
-           SET name = $2, color = $3, applicable = $4, updated_at = NOW(), updated_by = $5
-           WHERE id = $1`,
-          [id, nextName, nextColor, nextApplicable, normalizeUserId(req.user?.id) || null]
+           SET name = $2, color = $3, applicable = $4, is_active = $5, updated_at = NOW(), updated_by = $6
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, nextName, nextColor, nextApplicable, nextIsActive, actorId]
         );
       } else if (cap.quotaEnabled) {
         await pool.query(
           `UPDATE leave_types
-           SET name = $2, color = $3, applicable = $4, default_quota = $5
-           WHERE id = $1`,
-          [id, nextName, nextColor, nextApplicable, nextDefaultQuota]
+           SET name = $2, color = $3, applicable = $4, default_quota = $5, is_active = $6
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, nextName, nextColor, nextApplicable, nextDefaultQuota, nextIsActive]
         );
       } else {
         await pool.query(
           `UPDATE leave_types
-           SET name = $2, color = $3, applicable = $4
-           WHERE id = $1`,
-          [id, nextName, nextColor, nextApplicable]
+           SET name = $2, color = $3, applicable = $4, is_active = $5
+           WHERE LOWER(id) = LOWER($1)`,
+          [id, nextName, nextColor, nextApplicable, nextIsActive]
         );
       }
     }
 
     const rows = await fetchLeaveTypes(cap);
-    const row = rows.find((x) => String(x.id).toLowerCase() === id);
-    if (!row) return res.status(404).json({ error: 'ไม่พบประเภทวันลาที่ต้องการแก้ไข' });
-    return res.json({
-      id: row.id,
-      label: row.name,
-      name: row.name,
-      color: row.color,
-      applicable: row.applicable,
-      applicableTo: row.applicable,
-      defaultQuota: Number.isFinite(Number(row.defaultQuota)) ? Number(row.defaultQuota) : 0,
-      updatedAt: String(row.updatedAt ?? ''),
-      updatedById: row.updatedById ?? '',
-      updatedByName: row.updatedByName ?? '',
-      isActive: true,
-    });
+    const mapped = mapLeaveTypes(rows);
+    const one = mapped.find((x) => String(x.id).toLowerCase() === id);
+    if (!one) return res.status(404).json({ error: 'ไม่พบประเภทวันลาที่ต้องการแก้ไข' });
+    return res.json(one);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return res.status(500).json({ error: message });
