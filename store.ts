@@ -618,7 +618,10 @@ function normalizeLeaveTypeList(list: LeaveTypeDefinition[]): LeaveTypeDefinitio
 }
 
 export const getLeaveTypes = (): LeaveTypeDefinition[] => {
-  if (isApiMode() && _leaveTypesCache) return _leaveTypesCache; // cache ผ่าน normalizeLeaveType แล้ว (uppercase)
+  // โหมด API: ใช้เฉพาะ cache จากเซิร์ฟเวอร์ (หรือชุดตั้งต้นก่อนโหลด) — ห้ามอ่าน localStorage แทน DB จะได้ไม่ merge ผิดชุด
+  if (isApiMode()) {
+    return _leaveTypesCache ?? INITIAL_LEAVE_TYPES;
+  }
   const stored = localStorage.getItem(STORAGE_KEYS.LEAVE_TYPES);
   if (!stored) {
     localStorage.setItem(STORAGE_KEYS.LEAVE_TYPES, JSON.stringify(INITIAL_LEAVE_TYPES));
@@ -635,10 +638,9 @@ export const saveLeaveTypes = (types: LeaveTypeDefinition[]): void | Promise<voi
     const deduped = normalizeLeaveTypeList(types);
     const promise = api.putLeaveTypes(deduped as unknown as Record<string, unknown>[])
       .then((res) => {
-        const list = (res as Record<string, unknown>[]).map(normalizeLeaveType);
+        const list = toArray(res).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
-      })
-      .catch(() => {});
+      });
     return promise as Promise<void>;
   }
   const deduped = normalizeLeaveTypeList(types);
@@ -653,6 +655,21 @@ export const getLeaveTypesForGender = (gender: Gender): LeaveTypeDefinition[] =>
 };
 
 export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): LeaveTypeDefinition | Promise<LeaveTypeDefinition> => {
+  if (isApiMode()) {
+    return api.getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const maxOrder = normalized.length ? Math.max(...normalized.map(t => t.order)) : 0;
+        const id = 'LT' + Date.now();
+        const newType: LeaveTypeDefinition = { ...data, id, order: maxOrder + 1 };
+        return api.putLeaveTypes([...normalized, newType] as unknown as Record<string, unknown>[]).then((raw) => {
+          const out = toArray(raw).map(normalizeLeaveType);
+          _leaveTypesCache = normalizeLeaveTypeList(out);
+          return newType;
+        });
+      });
+  }
   const types = getLeaveTypes();
   const maxOrder = types.length ? Math.max(...types.map(t => t.order)) : 0;
   const id = 'LT' + Date.now();
@@ -666,15 +683,26 @@ export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): L
 
 export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>): void | Promise<void> => {
   if (isApiMode()) {
-    const body: Record<string, unknown> = {};
-    if (data.label !== undefined) body.label = data.label;
-    if (data.applicableTo !== undefined) body.applicableTo = data.applicableTo;
-    if (data.defaultQuota !== undefined) body.defaultQuota = data.defaultQuota;
-    // Keep payload minimal; backend PATCH updates only provided fields.
-    return api.patchLeaveType(id, body)
-      .then(() => api.getLeaveTypes())
+    const targetId = String(id || '').trim().toUpperCase();
+    // ดึงรายการล่าสุดจาก API ก่อน merge — หลีกเลี่ยงการ PUT จาก snapshot ที่มาจาก localStorage/ค่าเก่า
+    return api.getLeaveTypes()
       .then((res) => {
-        const list = (res as Record<string, unknown>[]).map(normalizeLeaveType);
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
+        if (idx < 0) {
+          throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
+        }
+        const next = [...normalized];
+        next[idx] = {
+          ...next[idx],
+          ...data,
+          id: next[idx].id,
+        };
+        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
+      })
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
       }) as Promise<void>;
   }

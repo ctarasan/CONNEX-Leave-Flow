@@ -407,7 +407,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                   <p className="text-gray-400 font-bold italic text-sm">ไม่พบข้อมูลวันลาในช่วงที่เลือก</p>
                 </div>
               ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={260}>
                 <BarChart
                   data={pivotData.slice(0, 5).map((row) => ({
                     userName: row.userName,
@@ -446,7 +446,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
 
             <div className="h-[350px] w-full">
               <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 text-center">สถิติการลาแยกตามประเภท (จำนวนครั้ง)</p>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={260}>
                 <BarChart data={stats}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />

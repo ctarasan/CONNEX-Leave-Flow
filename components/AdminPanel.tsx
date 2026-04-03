@@ -74,7 +74,7 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) => {
   const { showAlert, showConfirm } = useAlert();
   const { runAction, isActionBusy } = useAsyncAction();
-  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'leavetypes' | 'holidays' | 'projects' | 'expensetypes'>('projects');
+  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'leavetypes' | 'holidays' | 'projects' | 'vacationpolicy' | 'expensetypes'>('projects');
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editPassword, setEditPassword] = useState('');
@@ -194,7 +194,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   }, []);
 
   useEffect(() => {
-    if (!isAdmin && ['employees', 'leavetypes', 'holidays'].includes(activeSubTab)) {
+    if (!isAdmin && ['employees', 'leavetypes', 'holidays', 'vacationpolicy'].includes(activeSubTab)) {
       setActiveSubTab('projects');
     }
   }, [activeSubTab, isAdmin]);
@@ -741,7 +741,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           onClick={() => setActiveSubTab('projects')}
           className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'projects' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
-          จัดการโครงการ
+          ข้อมูลโครงการ
         </button>
         {isAdmin && (
           <>
@@ -749,7 +749,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               onClick={() => setActiveSubTab('employees')}
               className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'employees' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              รายชื่อพนักงาน
+              ข้อมูลพนักงาน
             </button>
             <button 
               onClick={() => { setActiveSubTab('leavetypes'); refreshLeaveTypes(); }}
@@ -761,7 +761,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               onClick={() => setActiveSubTab('holidays')}
               className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'holidays' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              จัดการวันหยุดบริษัท
+              วันหยุดบริษัท
+            </button>
+            <button
+              onClick={() => setActiveSubTab('vacationpolicy')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition ${activeSubTab === 'vacationpolicy' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              กฏการหักลาพักร้อน
             </button>
             <button
               onClick={() => {
@@ -779,7 +785,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
 
       {activeSubTab === 'projects' ? (
         <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-xl font-bold text-gray-900">จัดการโครงการ (Manager/Admin)</h2>
+          <h2 className="text-xl font-bold text-gray-900">ข้อมูลโครงการ (Manager/Admin)</h2>
           <div className="flex gap-2 p-1 bg-gray-100 rounded-xl w-fit">
             <button
               onClick={() => setProjectTab('project')}
@@ -949,7 +955,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <div className="w-10 h-10 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
               </div>
-              รายชื่อและสิทธิพนักงาน
+              ข้อมูลพนักงาน
             </h2>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -1161,72 +1167,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </button>
           </div>
           <p className="text-xs text-gray-500 mb-4">กำหนดชื่อประเภท ใช้กับเพศใด และโควต้าวันต่อปี — พนักงานชายจะไม่เห็นประเภทที่ตั้งเป็นหญิงเท่านั้น (เช่น ลาคลอด)</p>
-          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
-            <h4 className="text-sm font-black text-indigo-900 mb-3">กติกาหักลาพักร้อนกรณีเข้างานสาย</h4>
-            <div className="space-y-2">
-              {latePolicy.tiers.map((tier, idx) => (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
-                      ช่วงที่ {idx + 1}: เริ่มหักหลังเวลา
-                    </label>
-                    <input
-                      type="time"
-                      step={1}
-                      value={tier.after}
-                      onChange={(e) => handleLateTierChange(idx, { after: e.target.value || '09:30:00' })}
-                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
-                      จำนวนวันที่หัก
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={12}
-                      step="0.25"
-                      value={tier.penalty}
-                      onChange={(e) => handleLateTierChange(idx, { penalty: Number(e.target.value) })}
-                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveLateTier(idx)}
-                    disabled={latePolicy.tiers.length <= 1}
-                    className="h-[46px] px-3 bg-rose-100 text-rose-700 rounded-xl text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    ลบช่วง
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-between mt-3 gap-2">
-              <p className="text-[11px] text-indigo-700 font-medium">
-                รองรับหลายช่วงเวลา: ระบบจะใช้อัตราหักของช่วงที่ตรงกับเวลาเช็คอินล่าสุดโดยอัตโนมัติ (จำกัดค่าสูงสุด 12 วันต่อช่วง)
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAddLateTier}
-                  className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black hover:bg-indigo-100 transition"
-                >
-                  เพิ่มช่วง
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveLatePolicy}
-                  disabled={isActionBusy('admin-save-late-policy')}
-                  aria-busy={isActionBusy('admin-save-late-policy')}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition disabled:opacity-50"
-                >
-                  บันทึกกติกา
-                </button>
-              </div>
-            </div>
-          </div>
           <div className="overflow-x-auto rounded-xl border border-gray-100">
             <table className="min-w-full text-sm">
               <thead>
@@ -1431,7 +1371,77 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             )}
           </div>
         </div>
-      ) : (
+      ) : activeSubTab === 'vacationpolicy' ? (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">กฏการหักลาพักร้อน</h2>
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+            <h4 className="text-sm font-black text-indigo-900 mb-3">กฏการหักลาพักร้อนกรณีเข้างานสาย</h4>
+            <div className="space-y-2">
+              {latePolicy.tiers.map((tier, idx) => (
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
+                      ช่วงที่ {idx + 1}: เริ่มหักหลังเวลา
+                    </label>
+                    <input
+                      type="time"
+                      step={1}
+                      value={tier.after}
+                      onChange={(e) => handleLateTierChange(idx, { after: e.target.value || '09:30:00' })}
+                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">
+                      จำนวนวันที่หัก
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={12}
+                      step="0.25"
+                      value={tier.penalty}
+                      onChange={(e) => handleLateTierChange(idx, { penalty: Number(e.target.value) })}
+                      className="w-full p-3 border-2 border-indigo-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveLateTier(idx)}
+                    disabled={latePolicy.tiers.length <= 1}
+                    className="h-[46px] px-3 bg-rose-100 text-rose-700 rounded-xl text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ลบช่วง
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between mt-3 gap-2">
+              <p className="text-[11px] text-indigo-700 font-medium">
+                รองรับหลายช่วงเวลา: ระบบจะใช้อัตราหักของช่วงที่ตรงกับเวลาเช็คอินล่าสุดโดยอัตโนมัติ (จำกัดค่าสูงสุด 12 วันต่อช่วง)
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddLateTier}
+                  className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black hover:bg-indigo-100 transition"
+                >
+                  เพิ่มช่วง
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLatePolicy}
+                  disabled={isActionBusy('admin-save-late-policy')}
+                  aria-busy={isActionBusy('admin-save-late-policy')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition disabled:opacity-50"
+                >
+                  บันทึก
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : activeSubTab === 'holidays' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <form onSubmit={handleAddHoliday} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
@@ -1525,12 +1535,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Add Employee Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-[32px] p-8 max-w-lg w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-[32px] max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="max-h-[90vh] overflow-y-auto p-8 pr-6 custom-scrollbar">
             <h3 className="text-xl font-black text-gray-900 mb-6 flex items-center gap-3">
               <div className="w-10 h-10 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
@@ -1613,6 +1624,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
@@ -1620,7 +1632,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       {/* Edit User Modal */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-[32px] p-8 max-w-lg w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-[32px] max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="max-h-[90vh] overflow-y-auto p-8 pr-6 custom-scrollbar">
             <h3 className="text-xl font-black text-gray-900 mb-6 flex items-center gap-3">
               <div className="w-10 h-10 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -1673,7 +1686,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>
-                <select value={editingUser.managerId || ''} onChange={(e) => setEditingUser(prev => prev ? { ...prev, managerId: e.target.value || undefined } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold">
+                <select value={editingUser.managerId || ''} onChange={(e) => setEditingUser(prev => prev ? { ...prev, managerId: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold">
                   <option value="">— ยังไม่ได้กำหนด —</option>
                   {users.filter(u => u.id !== editingUser.id && (u.role === UserRole.MANAGER || u.role === UserRole.ADMIN)).map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
@@ -1689,6 +1702,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <button type="button" onClick={() => { setEditingUser(null); setEditPassword(''); }} className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black hover:bg-gray-200 transition">
                 ยกเลิก
               </button>
+            </div>
             </div>
           </div>
         </div>
