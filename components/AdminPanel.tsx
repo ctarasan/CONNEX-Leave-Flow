@@ -424,10 +424,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         password: editPassword.trim() || editingUser.password,
       };
       try {
-        const toSave = await withRecomputedVacationQuota(toSaveBase);
+        const toSave = isApiMode() ? toSaveBase : await withRecomputedVacationQuota(toSaveBase);
         const result = updateUser(toSave);
         if (result != null && typeof (result as Promise<void>).then === 'function') {
           await (result as Promise<void>);
+        }
+        if (isApiMode() && toSave.id) {
+          await postRecalculateVacationQuotaCurrent(toSave.id);
+          await loadFromApi().catch(() => {});
         }
         const latestUsers = getAllUsers();
         setUsers(latestUsers);
@@ -474,20 +478,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         ? await (createdMaybe as Promise<User>)
         : createdMaybe as User;
       if (created?.id) {
-        const createdWithQuota = await withRecomputedVacationQuota(created);
-        const saveCreatedResult = updateUser(createdWithQuota);
-        if (saveCreatedResult && typeof (saveCreatedResult as Promise<void>).then === 'function') {
-          await (saveCreatedResult as Promise<void>);
-        }
-        setUsers((prev) => {
-          const idx = prev.findIndex((u) => u.id === createdWithQuota.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = createdWithQuota;
-            return next;
+        if (isApiMode()) {
+          await postRecalculateVacationQuotaCurrent(created.id);
+          await loadFromApi().catch(() => {});
+        } else {
+          const createdWithQuota = await withRecomputedVacationQuota(created);
+          const saveCreatedResult = updateUser(createdWithQuota);
+          if (saveCreatedResult && typeof (saveCreatedResult as Promise<void>).then === 'function') {
+            await (saveCreatedResult as Promise<void>);
           }
-          return [...prev, createdWithQuota];
-        });
+          setUsers((prev) => {
+            const idx = prev.findIndex((u) => u.id === createdWithQuota.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = createdWithQuota;
+              return next;
+            }
+            return [...prev, createdWithQuota];
+          });
+        }
       }
       const latestUsers = getAllUsers();
       setUsers(latestUsers);

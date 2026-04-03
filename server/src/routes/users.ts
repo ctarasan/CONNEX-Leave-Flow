@@ -262,6 +262,8 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
   try {
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
+    const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
+    const targetUserId = normalizeUserId(body.userId) || null;
 
     const { rows } = await pool.query(
       `
@@ -284,6 +286,7 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
         FROM users u
         CROSS JOIN ctx c
         WHERE u.join_date IS NOT NULL
+          AND ($2::text IS NULL OR u.id = $2)
       ),
       calc AS (
         SELECT
@@ -342,7 +345,7 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       )
       SELECT * FROM updated ORDER BY id
       `
-    , [normalizeUserId(req.user.id)]);
+    , [normalizeUserId(req.user.id), targetUserId]);
 
     res.json({
       updatedCount: rows.length,

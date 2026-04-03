@@ -390,9 +390,11 @@ export async function deleteUser(id: string): Promise<void> {
   }
 }
 
-export async function postRecalculateVacationQuotaCurrent(): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+export async function postRecalculateVacationQuotaCurrent(userId?: string): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+  const body = userId ? { userId } : undefined;
   const res = await fetchWithAuth(`${API_BASE}/api/users/recalculate-vacation-quota-current`, {
     method: 'POST',
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
