@@ -15,15 +15,17 @@ router.get('/', requireAuth, async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT h.date, h.name,
+         h.updated_at AS "updatedAt",
          h.updated_by AS "updatedById",
          COALESCE(u.name, '') AS "updatedByName"
        FROM holidays h
        LEFT JOIN users u ON ${normIdSql('u.id')} = ${normIdSql('h.updated_by')}
        ORDER BY h.date`
     );
-    const list = (rows as Array<{ date: string; name: string; updatedById?: string; updatedByName?: string }>).map((r) => ({
+    const list = (rows as Array<{ date: string; name: string; updatedAt?: string; updatedById?: string; updatedByName?: string }>).map((r) => ({
       date: (r.date as unknown) instanceof Date ? (r.date as unknown as Date).toISOString().slice(0, 10) : String(r.date).slice(0, 10),
       name: r.name,
+      updatedAt: r.updatedAt ?? '',
       updatedById: r.updatedById ?? '',
       updatedByName: r.updatedByName ?? '',
     }));

@@ -362,6 +362,7 @@ export function normalizeUser(u: Record<string, unknown>): User {
     failedLoginAttempts: u.failedLoginAttempts != null
       ? Number(u.failedLoginAttempts) || 0
       : (u.failed_login_attempts != null ? Number(u.failed_login_attempts) || 0 : 0),
+    updatedAt: u.updatedAt != null ? String(u.updatedAt) : (u.updated_at != null ? String(u.updated_at) : undefined),
     updatedById: u.updatedById != null ? normalizeUserId(u.updatedById) : (u.updated_by != null ? normalizeUserId(u.updated_by) : undefined),
     updatedByName: u.updatedByName != null ? String(u.updatedByName) : (u.updated_by_name != null ? String(u.updated_by_name) : undefined),
   };
@@ -412,6 +413,7 @@ function normalizeLeaveType(t: Record<string, unknown>): LeaveTypeDefinition {
     defaultQuota: t.defaultQuota != null ? Number(t.defaultQuota) : (t.default_quota != null ? Number(t.default_quota) : (initial?.defaultQuota ?? 0)),
     order: t.order != null ? Number(t.order) : (initial?.order ?? 0),
     isActive: t.isActive !== false && t.is_active !== false,
+    updatedAt: t.updatedAt != null ? String(t.updatedAt) : (t.updated_at != null ? String(t.updated_at) : undefined),
     updatedById: t.updatedById != null ? normalizeUserId(t.updatedById) : (t.updated_by != null ? normalizeUserId(t.updated_by) : undefined),
     updatedByName: t.updatedByName != null ? String(t.updatedByName) : (t.updated_by_name != null ? String(t.updated_by_name) : undefined),
   };
@@ -663,6 +665,19 @@ export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): L
 };
 
 export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>): void | Promise<void> => {
+  if (isApiMode()) {
+    const body: Record<string, unknown> = {};
+    if (data.label !== undefined) body.label = data.label;
+    if (data.applicableTo !== undefined) body.applicableTo = data.applicableTo;
+    if (data.defaultQuota !== undefined) body.defaultQuota = data.defaultQuota;
+    // Keep payload minimal; backend PATCH updates only provided fields.
+    return api.patchLeaveType(id, body)
+      .then(() => api.getLeaveTypes())
+      .then((res) => {
+        const list = (res as Record<string, unknown>[]).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
   const updated = types.map(t => t.id === id ? { ...t, ...data } : t);
   return saveLeaveTypes(updated);
@@ -1037,6 +1052,7 @@ function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
     assignedUserIds: Array.from(new Set(assignedUserIds)),
     projectManagerId: managerId,
     isActive: o.isActive !== false,
+    updatedAt: o.updatedAt != null ? String(o.updatedAt) : (o.updated_at != null ? String(o.updated_at) : undefined),
     updatedById: o.updatedById != null ? normalizeUserId(o.updatedById) : (o.updated_by != null ? normalizeUserId(o.updated_by) : undefined),
     updatedByName: o.updatedByName != null ? String(o.updatedByName) : (o.updated_by_name != null ? String(o.updated_by_name) : undefined),
   };

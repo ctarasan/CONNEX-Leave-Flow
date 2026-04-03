@@ -33,6 +33,7 @@ router.get('/', requireAuth, async (_req, res) => {
         `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
           u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota,
           u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+          u.updated_at as "updatedAt",
           u.updated_by as "updatedById",
           COALESCE(editor.name, '') as "updatedByName",
           COALESCE(u.is_suspended, FALSE) as "isSuspended",
@@ -68,6 +69,9 @@ router.get('/', requireAuth, async (_req, res) => {
               ELSE ''
             END as position,
             department, join_date as "joinDate", manager_id as "managerId",
+            updated_at as "updatedAt",
+            ''::text as "updatedById",
+            ''::text as "updatedByName",
             COALESCE(is_suspended, FALSE) as "isSuspended",
             COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
            FROM users ORDER BY id`
@@ -218,6 +222,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
         u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota, 
         u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+        u.updated_at as "updatedAt",
         u.updated_by as "updatedById",
         COALESCE(editor.name, '') as "updatedByName",
         COALESCE(u.is_suspended, FALSE) as "isSuspended",

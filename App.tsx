@@ -136,19 +136,22 @@ const App: React.FC = () => {
     if (isApiMode()) {
       setDbUnavailable(false);
       setDbUnavailableReason(null);
-      loadFromApi()
-        .then(() => {
-          setCurrentUser(getInitialUser());
-          const u = getInitialUser();
-          if (u) {
-            return Promise.all([loadAttendanceForUser(u.id), loadNotificationsForUser(u.id)]).then(() => {
-              fetchData({ forceReplaceRequests: true });
-              setReportTick(t => t + 1);
-            });
-          }
-          fetchData({ forceReplaceRequests: true });
-          setReportTick(t => t + 1);
-        })
+      const bootUser = getInitialUser();
+      const bootPromise = bootUser
+        ? loadFromApi().then(() => {
+            setCurrentUser(getInitialUser());
+            const u = getInitialUser();
+            if (u) {
+              return Promise.all([loadAttendanceForUser(u.id), loadNotificationsForUser(u.id)]).then(() => {
+                fetchData({ forceReplaceRequests: true });
+                setReportTick(t => t + 1);
+              });
+            }
+            fetchData({ forceReplaceRequests: true });
+            setReportTick(t => t + 1);
+          })
+        : Promise.resolve();
+      bootPromise
         .catch((err) => {
           setDbUnavailableReason(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
           setDbUnavailable(true);
@@ -179,7 +182,7 @@ const App: React.FC = () => {
         if (isApiMode()) {
           const u = getInitialUser();
           if (u) Promise.all([loadAttendanceForUser(u.id), loadNotificationsForUser(u.id)]).then(() => fetchData({ forceReplaceRequests: true }));
-          else loadFromApi().then(() => fetchData({ forceReplaceRequests: true }));
+          else fetchData({ forceReplaceRequests: true });
         } else {
           fetchData({ forceReplaceRequests: true });
         }

@@ -417,6 +417,18 @@ export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<R
   return res.json();
 }
 
+export async function patchLeaveType(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/leave-types/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
+  }
+  return res.json();
+}
+
 export async function getExpenseTypes(): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/expenses/types`);
   if (!res.ok) {

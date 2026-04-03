@@ -25,6 +25,7 @@ export interface LeaveTypeDefinition {
   isActive: boolean;
   updatedById?: string;
   updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface User {
@@ -46,6 +47,7 @@ export interface User {
   failedLoginAttempts?: number;
   updatedById?: string;
   updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface LeaveRequest {
@@ -116,6 +118,7 @@ export interface TimesheetProject {
   isActive: boolean;
   updatedById?: string;
   updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface TimesheetEntry {

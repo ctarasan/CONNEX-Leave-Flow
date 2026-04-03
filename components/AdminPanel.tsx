@@ -33,6 +33,39 @@ const ROLE_LABELS: Record<UserRole, string> = {
 const GENDER_LABELS: Record<Gender, string> = { male: 'ชาย', female: 'หญิง' };
 const APPLICABLE_LABELS: Record<'male' | 'female' | 'both', string> = { male: 'ชายเท่านั้น', female: 'หญิงเท่านั้น', both: 'ทั้งชายและหญิง' };
 
+function formatUpdatedAt(raw?: string): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '-';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '-';
+  const parts = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Bangkok',
+  }).formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const day = pick('day');
+  const month = pick('month');
+  const year = pick('year');
+  const hour = pick('hour');
+  const minute = pick('minute');
+  if (!day || !month || !year || !hour || !minute) return '-';
+  return `${day}/${month}/${year}, ${hour}:${minute}`;
+}
+
+function formatUpdatedByWithTime(updatedByName?: string, updatedAt?: string): string {
+  const name = String(updatedByName ?? '').trim();
+  const when = formatUpdatedAt(updatedAt);
+  if (name && when !== '-') return `${name} - ${when}`;
+  if (name) return name;
+  if (when !== '-') return when;
+  return '-';
+}
+
 interface AdminPanelProps {
   currentUser: User;
   onUserDeleted?: (userId: string) => void;
@@ -66,6 +99,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
 
   const [holidays, setHolidays] = useState<Record<string, string>>({});
   const [holidayUpdatedBy, setHolidayUpdatedBy] = useState<Record<string, string>>({});
+  const [holidayUpdatedAt, setHolidayUpdatedAt] = useState<Record<string, string>>({});
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayName, setNewHolidayName] = useState('');
   const [latePolicy, setLatePolicy] = useState<AttendanceLatePolicy>(getAttendanceLatePolicy());
@@ -135,6 +169,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         id: String(x.id ?? ''),
         label: String(x.label ?? ''),
         isActive: x.isActive !== false,
+        updatedAt: String(x.updatedAt ?? x.updated_at ?? ''),
         updatedById: String(x.updatedById ?? x.updated_by ?? ''),
         updatedByName: String(x.updatedByName ?? x.updated_by_name ?? ''),
       })));
@@ -142,15 +177,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     if (isApiMode()) {
       getHolidaysFromApi().then((rows) => {
         if (!Array.isArray(rows)) return;
-        const audit: Record<string, string> = {};
+        const auditBy: Record<string, string> = {};
+        const auditAt: Record<string, string> = {};
         for (const item of rows) {
           if (!item || typeof item !== 'object') continue;
           const o = item as Record<string, unknown>;
           const date = String(o.date ?? '').slice(0, 10);
           if (!date) continue;
-          audit[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+          auditBy[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+          auditAt[date] = String(o.updatedAt ?? o.updated_at ?? '');
         }
-        setHolidayUpdatedBy(audit);
+        setHolidayUpdatedBy(auditBy);
+        setHolidayUpdatedAt(auditAt);
       }).catch(() => {});
     }
   }, []);
@@ -169,6 +207,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         id: String(x.id ?? ''),
         label: String(x.label ?? ''),
         isActive: x.isActive !== false,
+        updatedAt: String(x.updatedAt ?? x.updated_at ?? ''),
         updatedById: String(x.updatedById ?? x.updated_by ?? ''),
         updatedByName: String(x.updatedByName ?? x.updated_by_name ?? ''),
       })));
@@ -178,15 +217,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     if (!isApiMode()) return Promise.resolve();
     return getHolidaysFromApi().then((rows) => {
       if (!Array.isArray(rows)) return;
-      const audit: Record<string, string> = {};
+      const auditBy: Record<string, string> = {};
+      const auditAt: Record<string, string> = {};
       for (const item of rows) {
         if (!item || typeof item !== 'object') continue;
         const o = item as Record<string, unknown>;
         const date = String(o.date ?? '').slice(0, 10);
         if (!date) continue;
-        audit[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+        auditBy[date] = String(o.updatedByName ?? o.updated_by_name ?? '');
+        auditAt[date] = String(o.updatedAt ?? o.updated_at ?? '');
       }
-      setHolidayUpdatedBy(audit);
+      setHolidayUpdatedBy(auditBy);
+      setHolidayUpdatedAt(auditAt);
     }).catch(() => {});
   };
   const usersByDepartment = useMemo(() => {
@@ -842,7 +884,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         <td className="py-2 font-black">{p.code}</td>
                         <td className="py-2">{p.name}</td>
                         <td className="py-2">{users.find((u) => u.id === p.projectManagerId)?.name || '-'}</td>
-                        <td className="py-2">{p.updatedByName || '-'}</td>
+                        <td className="py-2 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(p.updatedByName, p.updatedAt)}</td>
                         <td className="py-2 text-right"><button onClick={() => handleEditProject(p)} className="text-blue-600 text-xs font-black">แก้ไข</button></td>
                       </tr>
                     ))}
@@ -1064,9 +1106,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                           />
                         </button>
                       </td>
-                      <td className="px-6 py-4 font-bold text-gray-700">
-                        {user.updatedByName || '-'}
-                      </td>
+                      <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(user.updatedByName, user.updatedAt)}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -1204,7 +1244,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     <td className="px-6 py-4 font-bold text-gray-900">{lt.label}</td>
                     <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-[10px] font-bold text-gray-600">{APPLICABLE_LABELS[lt.applicableTo]}</span></td>
                     <td className="px-6 py-4 text-center font-black text-indigo-600">{lt.defaultQuota >= 999 ? 'ไม่จำกัด' : lt.defaultQuota}</td>
-                    <td className="px-6 py-4 font-bold text-gray-700">{lt.updatedByName || '-'}</td>
+                    <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(lt.updatedByName, lt.updatedAt)}</td>
                     <td className="px-6 py-4 text-right">
                       <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800 mr-2">แก้ไข</button>
                       <button
@@ -1338,7 +1378,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <div key={t.id} className="flex items-center justify-between border rounded-xl px-3 py-2">
                 <div>
                   <span className={`text-sm font-bold ${t.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{t.label}</span>
-                  <p className="text-[11px] font-bold text-gray-500">แก้ไขล่าสุดโดย: {t.updatedByName || '-'}</p>
+                  <p className="text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(t.updatedByName, t.updatedAt)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -1450,7 +1490,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                         {formatYmdAsDdMmBe(date)}
                       </td>
                       <td className="px-6 py-4 font-bold text-gray-900">{holidays[date]}</td>
-                      <td className="px-6 py-4 font-bold text-gray-700">{holidayUpdatedBy[date] || '-'}</td>
+                      <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(holidayUpdatedBy[date], holidayUpdatedAt[date])}</td>
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => handleDeleteHoliday(date)}

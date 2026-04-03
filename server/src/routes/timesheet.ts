@@ -86,14 +86,15 @@ router.get('/projects', async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT
-         id,
-         code,
-         name,
+         p.id,
+         p.code,
+         p.name,
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
          is_active AS "isActive",
-         updated_by AS "updatedById",
+         p.updated_at AS "updatedAt",
+         p.updated_by AS "updatedById",
          COALESCE(editor.name, '') AS "updatedByName"
        FROM timesheet_projects p
        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
@@ -134,20 +135,22 @@ router.post('/projects', requireAuth, async (req, res) => {
          assigned_user_ids = EXCLUDED.assigned_user_ids,
          task_target_days = EXCLUDED.task_target_days,
          is_active = EXCLUDED.is_active,
+         updated_at = NOW(),
          updated_by = EXCLUDED.updated_by`,
       [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive, normalizeActorId(req.user?.id) || null]
     );
 
     const { rows } = await pool.query(
       `SELECT
-         id,
-         code,
-         name,
+         p.id,
+         p.code,
+         p.name,
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
          is_active AS "isActive",
-         updated_by AS "updatedById",
+         p.updated_at AS "updatedAt",
+         p.updated_by AS "updatedById",
          COALESCE(editor.name, '') AS "updatedByName"
        FROM timesheet_projects p
        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
