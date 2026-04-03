@@ -4,6 +4,8 @@
  */
 
 const PROD_BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+/** สำรองเมื่อยังไม่ตั้ง VITE_PREVIEW_API_URL บน Vercel — อัปเดตให้ตรง deployment Preview ล่าสุดของ connex-leave-flow-doak เวลาปล่อยคู่กับ frontend */
+const DEFAULT_CONNEX_PREVIEW_BACKEND = 'https://connex-leave-flow-doak-pk6q925h2-ctarasans-projects.vercel.app';
 const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
   ? String(import.meta.env.VITE_PREVIEW_API_URL).trim().replace(/\/$/, '')
   : '';
@@ -22,7 +24,9 @@ function getEffectiveApiBase(): string {
     const isConnexFrontendHost = /^connex-leave-flow(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host);
     if (isConnexFrontendHost && (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app'))) {
       // For Preview deployments, point to preview backend only (do not fall back to production backend).
-      if (VERCEL_ENV === 'preview') return PREVIEW_BACKEND_URL;
+      if (VERCEL_ENV === 'preview') {
+        return PREVIEW_BACKEND_URL || DEFAULT_CONNEX_PREVIEW_BACKEND;
+      }
       return PROD_BACKEND_URL;
     }
   }
