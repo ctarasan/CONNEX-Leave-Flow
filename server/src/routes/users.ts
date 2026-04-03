@@ -25,6 +25,106 @@ const normIdSql = (col: string): string =>
      ELSE TRIM(COALESCE((${col})::text, ''))
    END)`;
 
+/** สูตรเดียวกับ POST /recalculate-vacation-quota-current — หักตามวันเริ่มงาน (1–15: 0 / 16–25: 0.5 / >25: 1) */
+const VACATION_QUOTA_RECALC_SQL = `
+      WITH ctx AS (
+        SELECT
+          (now() AT TIME ZONE 'Asia/Bangkok')::date AS today_bkk,
+          EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int AS curr_year
+      ),
+      base AS (
+        SELECT
+          u.id,
+          CASE
+            WHEN EXTRACT(YEAR FROM u.join_date::date)::int >= 2400
+              THEN (u.join_date::date - INTERVAL '543 years')::date
+            ELSE u.join_date::date
+          END AS start_date,
+          make_date(c.curr_year, 1, 1) AS year_start,
+          make_date(c.curr_year, 12, 31) AS year_end,
+          c.today_bkk
+        FROM users u
+        CROSS JOIN ctx c
+        WHERE u.join_date IS NOT NULL
+          AND ($2::text IS NULL OR u.id = $2)
+      ),
+      calc AS (
+        SELECT
+          b.id,
+          b.start_date,
+          (b.start_date + INTERVAL '1 year')::date AS anniversary_date,
+          b.year_start,
+          b.year_end,
+          b.today_bkk
+        FROM base b
+      ),
+      ent AS (
+        SELECT
+          c.id,
+          c.anniversary_date,
+          CASE
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
+              )
+            )
+          END::numeric(10,2) AS full_year_entitlement,
+          CASE
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            WHEN c.today_bkk < c.anniversary_date THEN 0.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
+              )
+            )
+          END::numeric(10,2) AS earned_entitlement_today,
+          c.today_bkk
+        FROM calc c
+      ),
+      updated AS (
+        UPDATE users u
+        SET vacation_quota = e.earned_entitlement_today,
+            updated_by = $1
+        FROM ent e
+        WHERE u.id = e.id
+        RETURNING
+          u.id,
+          u.name,
+          u.join_date AS "joinDate",
+          e.full_year_entitlement AS "fullYearEntitlement",
+          e.earned_entitlement_today AS "earnedEntitlementToday",
+          u.vacation_quota AS "vacationQuota"
+      )
+      SELECT * FROM updated ORDER BY id
+      `;
+
+async function runVacationQuotaRecalc(updatedBy: string | null, targetUserId: string | null) {
+  return pool.query(VACATION_QUOTA_RECALC_SQL, [normalizeUserId(updatedBy), targetUserId]);
+}
+
 router.get('/', requireAuth, async (_req, res) => {
   try {
     let rows: Record<string, unknown>[];
@@ -134,7 +234,7 @@ router.post('/', requireAuth, async (req, res) => {
     const sterilizationQuota = getQuotaValue(quotas, 'sterilization');
     const paternityQuota = getQuotaValue(quotas, 'paternity');
     
-    await pool.query(
+    const ins = await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
         sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, updated_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
@@ -142,6 +242,9 @@ router.post('/', requireAuth, async (req, res) => {
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
        sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, normalizeUserId(req.user?.id) || null]
     );
+    if ((ins.rowCount ?? 0) > 0) {
+      await runVacationQuotaRecalc(normalizeUserId(req.user?.id) || null, normalizeUserId(uid));
+    }
     res.status(201).json({ id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -154,11 +257,6 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
     const id = req.params.id;
-    const bodyKeys = Object.keys(req.body || {});
-    const passwordInBody = 'password' in (req.body || {});
-    // #region agent log
-    fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'users.ts:PUT', message: 'PUT user body', data: { id, bodyKeys, passwordInBody }, timestamp: Date.now(), hypothesisId: 'H1,H4' }) }).catch(() => {});
-    // #endregion
     const { name, email, role, gender, position, department, joinDate, managerId, quotas, password, isSuspended } = req.body;
     if (!id) return res.status(400).json({ error: 'ต้องมี id' });
     const updates: string[] = [];
@@ -205,6 +303,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     values.push(id);
     try {
       await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}`, values);
+      await runVacationQuotaRecalc(normalizeUserId(req.user.id), normalizeUserId(id));
     } catch (uErr) {
       const msg = uErr instanceof Error ? uErr.message : '';
       if (msg.includes('position')) {
@@ -265,102 +364,7 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
     const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
     const targetUserId = normalizeUserId(body.userId) || null;
 
-    const { rows } = await pool.query(
-      `
-      WITH ctx AS (
-        SELECT
-          (now() AT TIME ZONE 'Asia/Bangkok')::date AS today_bkk,
-          EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int AS curr_year
-      ),
-      base AS (
-        SELECT
-          u.id,
-          CASE
-            WHEN EXTRACT(YEAR FROM u.join_date::date)::int >= 2400
-              THEN (u.join_date::date - INTERVAL '543 years')::date
-            ELSE u.join_date::date
-          END AS start_date,
-          make_date(c.curr_year, 1, 1) AS year_start,
-          make_date(c.curr_year, 12, 31) AS year_end,
-          c.today_bkk
-        FROM users u
-        CROSS JOIN ctx c
-        WHERE u.join_date IS NOT NULL
-          AND ($2::text IS NULL OR u.id = $2)
-      ),
-      calc AS (
-        SELECT
-          b.id,
-          b.start_date,
-          (b.start_date + INTERVAL '1 year')::date AS anniversary_date,
-          b.year_start,
-          b.year_end,
-          b.today_bkk
-        FROM base b
-      ),
-      ent AS (
-        SELECT
-          c.id,
-          c.anniversary_date,
-          CASE
-            WHEN c.anniversary_date > c.year_end THEN 0.00
-            WHEN c.anniversary_date < c.year_start THEN 12.00
-            ELSE GREATEST(
-              0.00,
-              LEAST(
-                12.00,
-                (
-                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
-                  -
-                  CASE
-                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
-                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
-                    ELSE 1.00
-                  END
-                )
-              )
-            )
-          END::numeric(10,2) AS full_year_entitlement,
-          CASE
-            WHEN c.anniversary_date > c.year_end THEN 0.00
-            WHEN c.anniversary_date < c.year_start THEN 12.00
-            WHEN c.today_bkk < c.anniversary_date THEN 0.00
-            ELSE GREATEST(
-              0.00,
-              LEAST(
-                12.00,
-                (
-                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
-                  -
-                  CASE
-                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
-                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
-                    ELSE 1.00
-                  END
-                )
-              )
-            )
-          END::numeric(10,2) AS earned_entitlement_today,
-          c.today_bkk
-        FROM calc c
-      ),
-      updated AS (
-        UPDATE users u
-        SET vacation_quota = e.earned_entitlement_today,
-            updated_by = $1
-        FROM ent e
-        WHERE u.id = e.id
-        RETURNING
-          u.id,
-          u.name,
-          u.join_date AS "joinDate",
-          e.full_year_entitlement AS "fullYearEntitlement",
-          e.earned_entitlement_today AS "earnedEntitlementToday",
-          u.vacation_quota AS "vacationQuota"
-      )
-      SELECT * FROM updated ORDER BY id
-      `
-    , [normalizeUserId(req.user.id), targetUserId]);
+    const { rows } = await runVacationQuotaRecalc(normalizeUserId(req.user.id), targetUserId);
 
     res.json({
       updatedCount: rows.length,
