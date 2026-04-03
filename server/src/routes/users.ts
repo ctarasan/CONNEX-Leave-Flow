@@ -313,9 +313,9 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
                   (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
                   -
                   CASE
-                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 1 AND 15 THEN 1.00
-                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 16 AND 25 THEN 0.50
-                    ELSE 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
                   END
                 )
               )
@@ -333,9 +333,9 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
                   (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
                   -
                   CASE
-                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 1 AND 15 THEN 1.00
-                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 16 AND 25 THEN 0.50
-                    ELSE 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
                   END
                 )
               )

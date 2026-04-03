@@ -372,7 +372,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     }
 
     const base = 12 - anniversaryMonth + 1;
-    const adjustment = anniversaryDay <= 15 ? 1.0 : (anniversaryDay <= 25 ? 0.5 : 0.0);
+    const adjustment = joinDay <= 15 ? 0.0 : joinDay <= 25 ? 0.5 : 1.0;
     const fullYearEntitlement = Math.max(0, Math.min(12, Number((base - adjustment).toFixed(2))));
     const { year: todayYear, month: todayMonth, day: todayDay } = getBangkokTodayParts();
     const todayTime = Date.UTC(todayYear, todayMonth - 1, todayDay, 0, 0, 0);
@@ -606,7 +606,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const processYear = getBangkokTodayParts().year;
     const beYear = processYear + 543;
     showConfirm(
-      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: anniversary-based entitlement (adjustment: 1-15 หัก 1.0 / 16-25 หัก 0.5 / 26-สิ้นเดือน หัก 0)`,
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: ฐานจากเดือนครบรอบ; หักตามวันที่เริ่มงาน — วันที่ 1–15 ไม่หัก / 16–25 หัก 0.5 / หลังวันที่ 25 หัก 1 วัน`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
           if (isApiMode()) {
