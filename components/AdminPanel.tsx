@@ -611,7 +611,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const processYear = getBangkokTodayParts().year;
     const beYear = processYear + 543;
     showConfirm(
-      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: accrual รายเดือนตาม cutoff วันที่ 25 และ start-date adjustment (ณ ปัจจุบัน)`,
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: anniversary-based entitlement (base เดือน + day adjustment 1-25 หัก 0.5 / 26-สิ้นเดือน หัก 1.0)`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
           if (isApiMode()) {

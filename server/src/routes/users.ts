@@ -275,14 +275,14 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       base AS (
         SELECT
           u.id,
-          u.join_date::date AS start_date,
-          (u.join_date::date + INTERVAL '1 year')::date AS anniversary_date,
+          CASE
+            WHEN EXTRACT(YEAR FROM u.join_date::date)::int >= 2400
+              THEN (u.join_date::date - INTERVAL '543 years')::date
+            ELSE u.join_date::date
+          END AS start_date,
           make_date(c.curr_year, 1, 1) AS year_start,
           make_date(c.curr_year, 12, 31) AS year_end,
-          CASE
-            WHEN EXTRACT(DAY FROM c.today_bkk)::int > 25 THEN EXTRACT(MONTH FROM c.today_bkk)::int
-            ELSE EXTRACT(MONTH FROM c.today_bkk)::int - 1
-          END AS closed_month
+          c.today_bkk
         FROM users u
         CROSS JOIN ctx c
         WHERE u.join_date IS NOT NULL
@@ -291,56 +291,69 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
       calc AS (
         SELECT
           b.id,
+          b.start_date,
+          (b.start_date + INTERVAL '1 year')::date AS anniversary_date,
+          b.year_start,
+          b.year_end,
+          b.today_bkk
+        FROM base b
+      ),
+      ent AS (
+        SELECT
+          c.id,
+          c.anniversary_date,
           CASE
-            WHEN b.anniversary_date > b.year_end THEN 0.00
-            WHEN b.anniversary_date < b.year_start THEN 12.00
-            ELSE LEAST(
-              12.00,
-              (
-                CASE
-                  WHEN EXTRACT(MONTH FROM b.anniversary_date)::int <= GREATEST(0, b.closed_month)
-                   AND EXTRACT(DAY FROM b.anniversary_date)::int <= 25
-                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
-                  ELSE 0.00
-                END
-                +
-                GREATEST(
-                  0,
-                  GREATEST(0, b.closed_month) - EXTRACT(MONTH FROM b.anniversary_date)::int
-                )::numeric
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 1 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
+              )
+            )
+          END::numeric(10,2) AS full_year_entitlement,
+          CASE
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            WHEN c.today_bkk < c.anniversary_date THEN 0.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.anniversary_date)::int BETWEEN 1 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
               )
             )
           END::numeric(10,2) AS earned_entitlement_today,
-          CASE
-            WHEN b.anniversary_date > b.year_end THEN 0.00
-            WHEN b.anniversary_date < b.year_start THEN 12.00
-            ELSE LEAST(
-              12.00,
-              (
-                CASE
-                  WHEN EXTRACT(DAY FROM b.anniversary_date)::int <= 25
-                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
-                  ELSE 0.00
-                END
-                +
-                GREATEST(0, 12 - EXTRACT(MONTH FROM b.anniversary_date)::int)::numeric
-              )
-            )
-          END::numeric(10,2) AS full_year_entitlement
-        FROM base b
+          c.today_bkk
+        FROM calc c
       ),
       updated AS (
         UPDATE users u
-        SET vacation_quota = c.earned_entitlement_today,
+        SET vacation_quota = e.earned_entitlement_today,
             updated_by = $1
-        FROM calc c
-        WHERE u.id = c.id
+        FROM ent e
+        WHERE u.id = e.id
         RETURNING
           u.id,
           u.name,
           u.join_date AS "joinDate",
-          c.full_year_entitlement AS "fullYearEntitlement",
-          c.earned_entitlement_today AS "earnedEntitlementToday",
+          e.full_year_entitlement AS "fullYearEntitlement",
+          e.earned_entitlement_today AS "earnedEntitlementToday",
           u.vacation_quota AS "vacationQuota"
       )
       SELECT * FROM updated ORDER BY id
