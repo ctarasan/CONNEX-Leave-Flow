@@ -371,17 +371,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       return { fullYearEntitlement: 12, earnedEntitlement: 12, processYear };
     }
 
-    // Payroll-based accrual (cutoff day = 25):
-    // - anniversary day <= 25: include anniversary month with start-date adjustment
-    // - anniversary day > 25: first accrual starts next month (no accrual for anniversary month)
-    const isAnniversaryOnOrBeforeCutoff = anniversaryDay <= 25;
-    const firstMonthEntitlement = isAnniversaryOnOrBeforeCutoff
-      ? (joinDay <= 15 ? 1.0 : 0.5)
-      : 0.0;
-    const firstEligibleMonth = isAnniversaryOnOrBeforeCutoff ? anniversaryMonth : (anniversaryMonth + 1);
-    const remainingMonths = firstEligibleMonth <= 12 ? Math.max(0, 12 - firstEligibleMonth) : 0;
-    const fullYearEntitlement = Math.min(12, Number((firstMonthEntitlement + (remainingMonths * 1.0)).toFixed(2)));
-    const earnedEntitlement = fullYearEntitlement;
+    const base = 12 - anniversaryMonth + 1;
+    const adjustment = anniversaryDay <= 15 ? 1.0 : (anniversaryDay <= 25 ? 0.5 : 0.0);
+    const fullYearEntitlement = Math.max(0, Math.min(12, Number((base - adjustment).toFixed(2))));
+    const { year: todayYear, month: todayMonth, day: todayDay } = getBangkokTodayParts();
+    const todayTime = Date.UTC(todayYear, todayMonth - 1, todayDay, 0, 0, 0);
+    const earnedEntitlement = todayTime < anniversaryTime ? 0 : fullYearEntitlement;
 
     return {
       fullYearEntitlement,
@@ -611,7 +606,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     const processYear = getBangkokTodayParts().year;
     const beYear = processYear + 543;
     showConfirm(
-      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: anniversary-based entitlement (base เดือน + day adjustment 1-25 หัก 0.5 / 26-สิ้นเดือน หัก 1.0)`,
+      `ต้องการประมวลผลวันลาพักร้อนประจำปี พ.ศ. ${beYear} หรือไม่?\n\nสูตรที่ใช้: anniversary-based entitlement (adjustment: 1-15 หัก 1.0 / 16-25 หัก 0.5 / 26-สิ้นเดือน หัก 0)`,
       () => {
         runAction('admin-process-vacation-quota', async () => {
           if (isApiMode()) {
