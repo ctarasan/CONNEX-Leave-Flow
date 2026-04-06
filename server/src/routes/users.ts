@@ -127,6 +127,8 @@ async function runVacationQuotaRecalc(updatedBy: string | null, targetUserId: st
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
+    const includeResignedRaw = String((_req.query?.includeResigned ?? '')).trim().toLowerCase();
+    const includeResigned = includeResignedRaw === '1' || includeResignedRaw === 'true' || includeResignedRaw === 'yes';
     let rows: Record<string, unknown>[];
     try {
       const r = await pool.query(
@@ -142,7 +144,9 @@ router.get('/', requireAuth, async (_req, res) => {
           COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
         FROM users u
         LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('u.updated_by')}
+        WHERE ($1::boolean = TRUE OR COALESCE(u.is_resigned, FALSE) = FALSE)
         ORDER BY u.id`
+      , [includeResigned]
       );
       rows = r.rows as Record<string, unknown>[];
     } catch (qErr) {

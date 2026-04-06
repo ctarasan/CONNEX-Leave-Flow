@@ -89,6 +89,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newDepartment, setNewDepartment] = useState('');
   const [newJoinDate, setNewJoinDate] = useState('');
   const [newManagerId, setNewManagerId] = useState('');
+  const [showResignedUsers, setShowResignedUsers] = useState(false);
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
   const [editingLeaveType, setEditingLeaveType] = useState<LeaveTypeDefinition | null>(null);
@@ -241,6 +242,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'th'));
   }, [users]);
+  const visibleEmployeeUsers = useMemo(
+    () => users.filter((u) => showResignedUsers || u.isResigned !== true),
+    [users, showResignedUsers]
+  );
 
   const handleSaveLatePolicy = () => {
     runAction('admin-save-late-policy', async () => {
@@ -686,7 +691,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     [leaveTypes]
   );
   const projectPagination = useTablePagination(activeProjects);
-  const employeePagination = useTablePagination(users);
+  const employeePagination = useTablePagination(visibleEmployeeUsers);
   const leaveTypePagination = useTablePagination(sortedLeaveTypesForAdmin);
   const holidayPagination = useTablePagination(sortedHolidayDates);
   const resetProjectForm = () => {
@@ -982,6 +987,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               ข้อมูลพนักงาน
             </h2>
             <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={showResignedUsers}
+                  onChange={(e) => setShowResignedUsers(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                แสดงพนักงานที่ลาออกแล้ว
+              </label>
               <button
                 type="button"
                 onClick={openAddEmployeeModal}
@@ -1025,7 +1039,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   const currentYear = new Date().getFullYear();
                   const holidayMap = getHolidays();
                   const vacationUsedByUser: Record<string, number> = {};
-                  users.forEach(u => { vacationUsedByUser[u.id] = 0; });
+                  visibleEmployeeUsers.forEach(u => { vacationUsedByUser[u.id] = 0; });
                   requests.forEach(req => {
                     if (req.type !== 'VACATION' || req.status === LeaveStatus.REJECTED) return;
                     const start = new Date(req.startDate);

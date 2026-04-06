@@ -136,8 +136,9 @@ export async function getBackendStatus(): Promise<{ server: boolean; database: b
   return { server: !!data?.server, database: !!data?.database, message: data?.message };
 }
 
-export async function getUsers(): Promise<Record<string, unknown>[]> {
-  const res = await fetchWithAuth(`${API_BASE}/api/users`);
+export async function getUsers(includeResigned = true): Promise<Record<string, unknown>[]> {
+  const q = includeResigned ? '?includeResigned=true' : '?includeResigned=false';
+  const res = await fetchWithAuth(`${API_BASE}/api/users${q}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     throw new Error(getErrorMessage(res, data) || 'โหลดผู้ใช้ไม่สำเร็จ');
