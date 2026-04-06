@@ -89,7 +89,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newDepartment, setNewDepartment] = useState('');
   const [newJoinDate, setNewJoinDate] = useState('');
   const [newManagerId, setNewManagerId] = useState('');
-  const [showResignedUsers, setShowResignedUsers] = useState(false);
+  const [showResignedOnly, setShowResignedOnly] = useState(false);
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
   const [editingLeaveType, setEditingLeaveType] = useState<LeaveTypeDefinition | null>(null);
@@ -243,8 +243,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'th'));
   }, [users]);
   const visibleEmployeeUsers = useMemo(
-    () => users.filter((u) => showResignedUsers || u.isResigned !== true),
-    [users, showResignedUsers]
+    () => users.filter((u) => (showResignedOnly ? u.isResigned === true : u.isResigned !== true)),
+    [users, showResignedOnly]
   );
 
   const handleSaveLatePolicy = () => {
@@ -987,15 +987,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               ข้อมูลพนักงาน
             </h2>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={showResignedUsers}
-                  onChange={(e) => setShowResignedUsers(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                แสดงพนักงานที่ลาออกแล้ว
-              </label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showResignedOnly}
+                onClick={() => setShowResignedOnly((prev) => !prev)}
+                className={`relative inline-flex h-8 w-16 items-center rounded-full border-2 transition ${
+                  showResignedOnly ? 'bg-rose-500 border-rose-600' : 'bg-gray-200 border-gray-300'
+                }`}
+                title={showResignedOnly ? 'แสดงเฉพาะพนักงานที่ลาออก' : 'แสดงเฉพาะพนักงานที่ยังไม่ลาออก'}
+              >
+                <span className={`absolute left-2 text-[9px] font-black uppercase transition ${showResignedOnly ? 'opacity-100 text-white' : 'opacity-0 text-gray-500'}`}>ON</span>
+                <span className={`absolute right-2 text-[9px] font-black uppercase transition ${showResignedOnly ? 'opacity-0 text-white' : 'opacity-100 text-gray-500'}`}>OFF</span>
+                <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${showResignedOnly ? 'translate-x-8' : 'translate-x-0'}`} />
+              </button>
+              <span className="text-xs font-bold text-gray-700">
+                {showResignedOnly ? 'แสดงเฉพาะพนักงานที่ลาออก' : 'แสดงเฉพาะพนักงานที่ยังไม่ลาออก'}
+              </span>
               <button
                 type="button"
                 onClick={openAddEmployeeModal}
