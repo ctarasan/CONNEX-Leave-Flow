@@ -356,6 +356,8 @@ export function normalizeUser(u: Record<string, unknown>): User {
     position,
     department,
     joinDate: String(u.joinDate ?? u.join_date ?? ''),
+    isResigned: u.isResigned === true || u.is_resigned === true,
+    resignedDate: String(u.resignedDate ?? u.resigned_date ?? ''),
     managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
     quotas: normalizeQuotaKeys(rawQuotas),
     isSuspended: u.isSuspended === true || u.is_suspended === true,

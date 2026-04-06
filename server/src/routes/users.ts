@@ -133,6 +133,8 @@ router.get('/', requireAuth, async (_req, res) => {
         `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
           u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota,
           u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+          COALESCE(u.is_resigned, FALSE) as "isResigned",
+          COALESCE(u.resigned_date::text, '') as "resignedDate",
           u.updated_at as "updatedAt",
           u.updated_by as "updatedById",
           COALESCE(editor.name, '') as "updatedByName",
@@ -169,6 +171,8 @@ router.get('/', requireAuth, async (_req, res) => {
               ELSE ''
             END as position,
             department, join_date as "joinDate", manager_id as "managerId",
+            FALSE as "isResigned",
+            ''::text as "resignedDate",
             updated_at as "updatedAt",
             ''::text as "updatedById",
             ''::text as "updatedByName",
@@ -184,6 +188,8 @@ router.get('/', requireAuth, async (_req, res) => {
     // ถ้ายังไม่ได้รัน migration 006 (คอลัมน์ security ยังไม่มี) ให้ตั้งค่า default เพื่อไม่ให้ frontend พัง
     rows = rows.map((r) => ({
       ...r,
+      isResigned: (r as Record<string, unknown>).isResigned ?? false,
+      resignedDate: (r as Record<string, unknown>).resignedDate ?? '',
       isSuspended: (r as Record<string, unknown>).isSuspended ?? false,
       failedLoginAttempts: (r as Record<string, unknown>).failedLoginAttempts ?? 0,
     }));
@@ -217,7 +223,7 @@ router.get('/', requireAuth, async (_req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
-    const { id, name, email, password, role = 'EMPLOYEE', gender, position = '', department = '', joinDate, managerId, quotas } = req.body;
+    const { id, name, email, password, role = 'EMPLOYEE', gender, position = '', department = '', joinDate, managerId, quotas, isResigned, resignedDate } = req.body;
     if (!name || !email || !password || !gender || !joinDate) {
       return res.status(400).json({ error: 'ต้องมี name, email, password, gender, joinDate' });
     }
@@ -236,18 +242,25 @@ router.post('/', requireAuth, async (req, res) => {
     
     const ins = await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
-        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, is_resigned, resigned_date, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        ON CONFLICT (id) DO NOTHING`,
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
-       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, normalizeUserId(req.user?.id) || null]
+       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, isResigned === true, (isResigned === true && resignedDate) ? resignedDate : null, normalizeUserId(req.user?.id) || null]
     );
     if ((ins.rowCount ?? 0) > 0) {
       await runVacationQuotaRecalc(normalizeUserId(req.user?.id) || null, normalizeUserId(uid));
     }
-    res.status(201).json({ id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null });
+    res.status(201).json({
+      id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null,
+      isResigned: isResigned === true,
+      resignedDate: (isResigned === true && resignedDate) ? resignedDate : '',
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message.includes('is_resigned') || message.includes('resigned_date')) {
+      return res.status(400).json({ error: 'ยังไม่ได้รัน migration สำหรับสถานะลาออก (server/migrations/016_user_resignation_status.sql)' });
+    }
     res.status(500).json({ error: message });
   }
 });
@@ -257,7 +270,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
     const id = req.params.id;
-    const { name, email, role, gender, position, department, joinDate, managerId, quotas, password, isSuspended } = req.body;
+    const { name, email, role, gender, position, department, joinDate, managerId, quotas, password, isSuspended, isResigned, resignedDate } = req.body;
     if (!id) return res.status(400).json({ error: 'ต้องมี id' });
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -275,6 +288,16 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (department !== undefined) { updates.push(`department = $${i++}`); values.push(department); }
     if (joinDate !== undefined) { updates.push(`join_date = $${i++}`); values.push(joinDate); }
     if (managerId !== undefined) { updates.push(`manager_id = $${i++}`); values.push(managerId || null); }
+    if (isResigned !== undefined) {
+      const resigned = isResigned === true;
+      updates.push(`is_resigned = $${i++}`);
+      values.push(resigned);
+      updates.push(`resigned_date = $${i++}`);
+      values.push(resigned ? (resignedDate || null) : null);
+    } else if (resignedDate !== undefined) {
+      updates.push(`resigned_date = $${i++}`);
+      values.push(resignedDate || null);
+    }
     if (quotas !== undefined && typeof quotas === 'object') {
       const qObj = quotas as Record<string, unknown>;
       if (qObj.sick !== undefined || qObj.SICK !== undefined) { updates.push(`sick_quota = $${i++}`); values.push(getQuotaValue(quotas, 'sick')); }
@@ -315,12 +338,17 @@ router.put('/:id', requireAuth, async (req, res) => {
       if (msg.includes('invalid input syntax for type integer')) {
         return res.status(400).json({ error: 'ฐานข้อมูลยังไม่รองรับโควต้าแบบทศนิยม กรุณารัน migration: server/migrations/012_quota_decimal.sql' });
       }
+      if (msg.includes('is_resigned') || msg.includes('resigned_date')) {
+        return res.status(400).json({ error: 'ยังไม่ได้รัน migration สำหรับสถานะลาออก (server/migrations/016_user_resignation_status.sql)' });
+      }
       throw uErr;
     }
     const { rows } = await pool.query(
       `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
         u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota, 
         u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+        COALESCE(u.is_resigned, FALSE) as "isResigned",
+        COALESCE(u.resigned_date::text, '') as "resignedDate",
         u.updated_at as "updatedAt",
         u.updated_by as "updatedById",
         COALESCE(editor.name, '') as "updatedByName",

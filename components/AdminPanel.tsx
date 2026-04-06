@@ -410,12 +410,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const handleSave = () => {
     if (!editingUser) return;
     runAction('admin-save-user', async () => {
+      if (editingUser.isResigned === true && !String(editingUser.resignedDate || '').trim()) {
+        showAlert('กรุณาเลือกวันที่ลาออก');
+        return;
+      }
       const toSaveBase: User = {
         ...editingUser,
         name: editingUser.name.trim(),
         email: editingUser.email.trim(),
         position: editingUser.position.trim(),
         department: editingUser.department.trim(),
+        resignedDate: editingUser.isResigned ? String(editingUser.resignedDate || '').trim() : '',
         password: editPassword.trim() || editingUser.password,
       };
       try {
@@ -1729,6 +1734,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันเริ่มงาน</label>
                 <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" />
+              </div>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">พนักงานลาออก</p>
+                    <p className="text-xs font-bold text-gray-600">เปิดเมื่อพนักงานพ้นสภาพการทำงาน</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={editingUser.isResigned === true}
+                    onClick={() => setEditingUser(prev => prev ? {
+                      ...prev,
+                      isResigned: !(prev.isResigned === true),
+                      resignedDate: !(prev.isResigned === true) ? prev.resignedDate : '',
+                    } : prev)}
+                    className={`relative inline-flex h-8 w-16 items-center rounded-full border-2 transition ${
+                      editingUser.isResigned ? 'bg-rose-500 border-rose-600' : 'bg-gray-200 border-gray-300'
+                    }`}
+                  >
+                    <span className={`absolute left-2 text-[9px] font-black uppercase transition ${editingUser.isResigned ? 'opacity-100 text-white' : 'opacity-0 text-gray-500'}`}>ON</span>
+                    <span className={`absolute right-2 text-[9px] font-black uppercase transition ${editingUser.isResigned ? 'opacity-0 text-white' : 'opacity-100 text-gray-500'}`}>OFF</span>
+                    <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${editingUser.isResigned ? 'translate-x-8' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                {editingUser.isResigned && (
+                  <div className="mt-3">
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันที่ลาออก <span className="text-red-500">*</span></label>
+                    <DatePicker
+                      value={editingUser.resignedDate || ''}
+                      onChange={(v) => setEditingUser(prev => prev ? { ...prev, resignedDate: v } : prev)}
+                      label=""
+                      disableHolidayWeekend={false}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>

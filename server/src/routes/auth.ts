@@ -50,6 +50,8 @@ router.post('/login', async (req, res) => {
       const r = await pool.query(
         `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
           password_hash,
+          COALESCE(is_resigned, FALSE) as "isResigned",
+          COALESCE(resigned_date::text, '') as "resignedDate",
           COALESCE(is_suspended, FALSE) as "isSuspended",
           COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
          FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
@@ -63,6 +65,8 @@ router.post('/login', async (req, res) => {
           const r = await pool.query(
             `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
               password_hash,
+              FALSE as "isResigned",
+              ''::text as "resignedDate",
               COALESCE(is_suspended, FALSE) as "isSuspended",
               COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
              FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
@@ -78,6 +82,8 @@ router.post('/login', async (req, res) => {
           );
           rows = (r.rows as Record<string, unknown>[]).map((row) => ({
             ...row,
+            isResigned: false,
+            resignedDate: '',
             isSuspended: false,
             failedLoginAttempts: 0,
           }));
@@ -92,6 +98,8 @@ router.post('/login', async (req, res) => {
           );
           rows = (r.rows as Record<string, unknown>[]).map((row) => ({
             ...row,
+            isResigned: false,
+            resignedDate: '',
             isSuspended: false,
             failedLoginAttempts: 0,
           }));
@@ -104,6 +112,8 @@ router.post('/login', async (req, res) => {
           );
           rows = (r.rows as Record<string, unknown>[]).map((row) => ({
             ...row,
+            isResigned: false,
+            resignedDate: '',
             isSuspended: false,
             failedLoginAttempts: 0,
           }));

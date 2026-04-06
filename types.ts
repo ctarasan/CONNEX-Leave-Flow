@@ -38,6 +38,10 @@ export interface User {
   position: string;
   department: string;
   joinDate: string; // ISO string (YYYY-MM-DD)
+  /** สถานะพนักงานลาออก */
+  isResigned?: boolean;
+  /** วันที่ลาออก (YYYY-MM-DD) เมื่อ isResigned = true */
+  resignedDate?: string;
   managerId?: string;
   /** โควต้าตามประเภทวันลา (key = leaveTypeId) — ตั้งค่าจากประเภทวันลา ไม่แก้ที่หน้าพนักงาน */
   quotas: Record<string, number>;
