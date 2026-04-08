@@ -4,7 +4,7 @@ import { approveExpenseClaim, getExpenseClaimById, getExpenseClaims, getExpenseT
 import { getAllUsers, getLeaveTypes, getTimesheetProjectsForUser, updateRequestStatus } from '../store';
 import { formatBangkokDdMmBeTime, formatYmdAsDdMmBe } from '../utils';
 import { useAsyncAction } from '../hooks/useAsyncAction';
-import { FIELD_MAX_LENGTHS } from '../constants';
+import { FIELD_MAX_LENGTHS, HOLIDAYS_2026 } from '../constants';
 
 type TabKey = 'ALL' | 'LEAVE' | 'EXPENSE';
 
@@ -42,6 +42,21 @@ const normalizeId = (raw: unknown): string => {
   if (!s) return '';
   if (/^\d+$/.test(s)) return String(parseInt(s, 10)).padStart(3, '0');
   return s;
+};
+
+const calculateBusinessDays = (startStr: string, endStr: string): number => {
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return 0;
+  let count = 0;
+  const curDate = new Date(start.getTime());
+  while (curDate <= end) {
+    const dayOfWeek = curDate.getDay();
+    const isoDate = curDate.toISOString().split('T')[0];
+    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !HOLIDAYS_2026[isoDate]) count++;
+    curDate.setDate(curDate.getDate() + 1);
+  }
+  return count;
 };
 
 interface PendingApprovalsBoardProps {
@@ -158,19 +173,24 @@ const PendingApprovalsBoard: React.FC<PendingApprovalsBoardProps> = ({ leaveRequ
 
   const leaveWaiting = useMemo<PendingItem[]>(() => {
     const typeMap = new Map(getLeaveTypes().map((x) => [x.id, x.label]));
+    const me = normalizeId(currentUser.id);
     return leaveRequests
       .filter((r) => r.status === LeaveStatus.PENDING)
-      .map((r) => ({
+      .filter((r) => normalizeId(r.userId) !== me)
+      .map((r) => {
+        const days = calculateBusinessDays(r.startDate, r.endDate);
+        return ({
         id: `LEAVE-${r.id}`,
         kind: 'LEAVE' as const,
         requesterName: r.userName,
         submittedAt: r.submittedAt,
-        title: typeMap.get(r.type) ?? r.type,
+        title: `${typeMap.get(r.type) ?? r.type} • ${days} วันทำการ`,
         subtitle: `${formatYmdAsDdMmBe(r.startDate)} ถึง ${formatYmdAsDdMmBe(r.endDate)}`,
         reason: r.reason,
         leaveRaw: r,
-      }));
-  }, [leaveRequests]);
+      });
+      });
+  }, [currentUser.id, leaveRequests]);
 
   const merged = useMemo(() => {
     const all = [...leaveWaiting, ...expenseWaiting];

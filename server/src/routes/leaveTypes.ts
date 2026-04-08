@@ -376,4 +376,44 @@ router.patch('/:id', requireAuth, async (req, res) => {
   }
 });
 
+/** ลบถาวรเฉพาะประเภทที่ไม่ใช่มาตรฐาน และไม่มีคำขอลาอ้างอิง */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
+    const id = String(req.params.id ?? '').trim().toLowerCase();
+    if (!id) return res.status(400).json({ error: 'ต้องมี id' });
+
+    const protectedIds = new Set([
+      'sick',
+      'vacation',
+      'personal',
+      'maternity',
+      'sterilization',
+      'paternity',
+      'ordination',
+      'military',
+      'other',
+    ]);
+    if (protectedIds.has(id)) {
+      return res.status(400).json({ error: 'ไม่สามารถลบประเภทวันลามาตรฐานของระบบได้ กรุณาใช้การปิดใช้แทน' });
+    }
+
+    const usage = await pool.query<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM leave_requests WHERE LOWER(TRIM(type)) = LOWER(TRIM($1))`,
+      [id]
+    );
+    if (Number(usage.rows[0]?.c ?? 0) > 0) {
+      return res.status(409).json({ error: 'ไม่สามารถลบได้ เนื่องจากมีคำขอลาที่อ้างอิงประเภทนี้อยู่' });
+    }
+
+    await pool.query(`DELETE FROM leave_types WHERE LOWER(TRIM(id)) = LOWER(TRIM($1))`, [id]);
+    const cap = await ensureLeaveTypeColumns();
+    const rows = await fetchLeaveTypes(cap);
+    res.json(mapLeaveTypes(rows));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  }
+});
+
 export default router;

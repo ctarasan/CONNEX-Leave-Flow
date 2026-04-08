@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord } from './types';
+import { User, UserRole, LeaveRequest, Notification, LeaveStatus, AttendanceRecord, ExpenseClaim } from './types';
 import { getInitialUser, getLeaveRequests, getNotifications, getAllUsers, getAttendanceRecords, getLeaveTypesForGender, getLeaveTypes, getHolidays, logoutUser, getSubordinateIdSetRecursive, loadFromApi, loadAttendanceForUser, loadNotificationsForUser, loadLeaveRequestsForManager, normalizeUserId, calculateLatePenaltyDays } from './store';
-import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT, getSessionCheck } from './api';
+import { isApiMode, getBackendStatus, getApiBase, SESSION_REPLACED_EVENT, getSessionCheck, getExpenseClaimById, getExpenseClaims, getExpenseTypes } from './api';
 import LeaveForm from './components/LeaveForm';
 import PendingApprovalsBoard from './components/PendingApprovalsBoard';
 import NotificationCenter from './components/NotificationCenter';
@@ -22,6 +22,7 @@ import { BarChart3, Clock3, History, Home, ReceiptText, Settings2 } from 'lucide
 
 /** ประเภทวันลาที่แสดงบนแดชบอร์ดโดย default: ลาป่วย ลาพักร้อน ลากิจ */
 const DEFAULT_DASHBOARD_LEAVE_IDS = ['SICK', 'VACATION', 'PERSONAL'];
+const normalizeId = (raw: unknown): string => normalizeUserId(raw);
 
 const App: React.FC = () => {
   const { showConfirm, showAlert } = useAlert();
@@ -30,6 +31,8 @@ const App: React.FC = () => {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
+  const [myExpenseClaims, setMyExpenseClaims] = useState<ExpenseClaim[]>([]);
+  const [expenseTypeLabelMap, setExpenseTypeLabelMap] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'history' | 'expense' | 'report' | 'admin'>('dashboard');
   const [attendanceSubTab, setAttendanceSubTab] = useState<'attendance' | 'timesheet'>('attendance');
   const [historySubTab, setHistorySubTab] = useState<'leave' | 'attendance' | 'vacation'>('leave');
@@ -100,12 +103,17 @@ const App: React.FC = () => {
         setRequests(allRequests);
       } else if (updatedUser!.role === UserRole.MANAGER) {
         const subordinateSet = getSubordinateIdSetRecursive(updatedUser!.id, allUsers);
-        let managedRequests = allRequests.filter(request => subordinateSet.has(request.userId));
+        const normalizedSubordinateSet = new Set(Array.from(subordinateSet).map((id) => normalizeId(id)));
+        let managedRequests = allRequests.filter((request) => normalizedSubordinateSet.has(normalizeId(request.userId)));
         // Fallback: ถ้า hierarchy ใน DB ยังไม่ได้ตั้งค่า ลอง direct managerId match
         if (managedRequests.length === 0 && allRequests.length > 0) {
-          const directSubIds = new Set(allUsers.filter(u => u.managerId === updatedUser!.id).map(u => u.id));
+          const directSubIds = new Set(
+            allUsers
+              .filter((u) => normalizeId(u.managerId) === normalizeId(updatedUser!.id))
+              .map((u) => normalizeId(u.id))
+          );
           if (directSubIds.size > 0) {
-            managedRequests = allRequests.filter(request => directSubIds.has(request.userId));
+            managedRequests = allRequests.filter((request) => directSubIds.has(normalizeId(request.userId)));
           }
         }
         setRequests(prev => {
@@ -113,7 +121,7 @@ const App: React.FC = () => {
           return managedRequests;
         });
       } else {
-        const myRequests = allRequests.filter(r => r.userId === updatedUser!.id);
+        const myRequests = allRequests.filter((r) => normalizeId(r.userId) === normalizeId(updatedUser!.id));
         setRequests(prev => {
           if (!options?.forceReplaceRequests && myRequests.length === 0 && prev.length > 0) return prev;
           return myRequests;
@@ -122,6 +130,75 @@ const App: React.FC = () => {
 
       setNotifications(allNotifs);
       setAttendanceHistory(allAttendance);
+      if (isApiMode()) {
+        getExpenseTypes()
+          .then((list) => {
+            const map: Record<string, string> = {};
+            for (const raw of list) {
+              const id = String((raw as Record<string, unknown>).id ?? '').trim();
+              const label = String((raw as Record<string, unknown>).label ?? '').trim();
+              if (id) map[id] = label || id;
+            }
+            setExpenseTypeLabelMap(map);
+          })
+          .catch(() => setExpenseTypeLabelMap({}));
+
+        getExpenseClaims({ scope: 'mine' })
+          .then(async (raw) => {
+            const mineBasics = raw
+              .map((x) => ({
+                id: String(x.id ?? ''),
+                requesterId: String(x.requesterId ?? ''),
+                requesterName: String(x.requesterName ?? ''),
+                approverId: x.approverId ? String(x.approverId) : undefined,
+                approverName: x.approverName ? String(x.approverName) : undefined,
+                status: String(x.status ?? 'DRAFT') as ExpenseClaim['status'],
+                claimDate: String(x.claimDate ?? ''),
+                submittedAt: x.submittedAt ? String(x.submittedAt) : undefined,
+                approvedAt: x.approvedAt ? String(x.approvedAt) : undefined,
+                rejectedAt: x.rejectedAt ? String(x.rejectedAt) : undefined,
+                rejectReason: x.rejectReason ? String(x.rejectReason) : undefined,
+                paidDate: x.paidDate ? String(x.paidDate) : undefined,
+                paidById: x.paidById ? String(x.paidById) : undefined,
+                paidByName: x.paidByName ? String(x.paidByName) : undefined,
+                paidSetAt: x.paidSetAt ? String(x.paidSetAt) : undefined,
+                adminNote: x.adminNote ? String(x.adminNote) : undefined,
+                projectSummary: x.projectSummary ? String(x.projectSummary) : '-',
+                detailSummary: x.detailSummary ? String(x.detailSummary) : '-',
+                items: [] as ExpenseClaim['items'],
+                totalAmount: Number(x.totalAmount ?? 0),
+                createdAt: String(x.createdAt ?? ''),
+                updatedAt: String(x.updatedAt ?? ''),
+              }))
+              .filter((c) => normalizeId(c.requesterId) === normalizeId(updatedUser!.id));
+
+            const mine = await Promise.all(
+              mineBasics.map(async (c) => {
+                try {
+                  const detail = await getExpenseClaimById(c.id);
+                  const items = Array.isArray(detail.items)
+                    ? detail.items.map((it) => ({
+                        id: String((it as Record<string, unknown>).id ?? ''),
+                        expenseDate: String((it as Record<string, unknown>).expenseDate ?? ''),
+                        projectId: String((it as Record<string, unknown>).projectId ?? ''),
+                        expenseTypeId: String((it as Record<string, unknown>).expenseTypeId ?? ''),
+                        detail: String((it as Record<string, unknown>).detail ?? ''),
+                        amount: Number((it as Record<string, unknown>).amount ?? 0),
+                      }))
+                    : [];
+                  return { ...c, items };
+                } catch {
+                  return c;
+                }
+              })
+            );
+            setMyExpenseClaims(mine);
+          })
+          .catch(() => setMyExpenseClaims([]));
+      } else {
+        setMyExpenseClaims([]);
+        setExpenseTypeLabelMap({});
+      }
     };
 
     if (isApiMode() && updatedUser.role === UserRole.MANAGER) {
@@ -272,30 +349,42 @@ const App: React.FC = () => {
   /** คำขอลาของ currentUser เอง — ใช้ cache โดยตรงเพราะ requests state ของ Manager มีแค่ข้อมูลลูกน้อง */
   const myRequests = useMemo(() => {
     if (!currentUser) return [];
-    return getLeaveRequests().filter(r => r.userId === currentUser.id);
+    return getLeaveRequests().filter((r) => normalizeId(r.userId) === normalizeId(currentUser.id));
   }, [currentUser, requests, reportTick]);
 
   /** ชื่อผู้บังคับบัญชาของ currentUser */
   const managerName = useMemo(() => {
     if (!currentUser?.managerId) return null;
-    return getAllUsers().find(u => u.id === currentUser.managerId)?.name ?? null;
+    return getAllUsers().find((u) => normalizeId(u.id) === normalizeId(currentUser.managerId))?.name ?? null;
   }, [currentUser, requests]);
+  const currentUserLive = useMemo(() => {
+    if (!currentUser) return null;
+    return getAllUsers().find((u) => normalizeId(u.id) === normalizeId(currentUser.id)) ?? currentUser;
+  }, [currentUser, requests, reportTick]);
 
   const leaveUsage = useMemo(() => {
     const approved: Record<string, number> = {};
     const pending: Record<string, number> = {};
     const currentYear = new Date().getFullYear();
+    const parseDateAtNoon = (raw: string): Date => {
+      const s = String(raw || '').trim();
+      if (!s) return new Date('invalid');
+      return new Date(s.includes('T') ? s : `${s}T12:00:00`);
+    };
     myRequests
-      .filter(r =>
-        (r.status === LeaveStatus.APPROVED || r.status === LeaveStatus.PENDING) &&
-        new Date(r.startDate).getFullYear() === currentYear
-      )
-      .forEach(r => {
+      .filter((r) => {
+        const status = String(r.status || '').toUpperCase();
+        if (status !== LeaveStatus.APPROVED && status !== LeaveStatus.PENDING) return false;
+        const start = parseDateAtNoon(r.startDate);
+        return !isNaN(start.getTime()) && start.getFullYear() === currentYear;
+      })
+      .forEach((r) => {
+        const leaveTypeId = String(r.type || '').toUpperCase();
         const days = calculateBusinessDays(r.startDate, r.endDate);
-        if (r.status === LeaveStatus.APPROVED) {
-          approved[r.type] = (approved[r.type] ?? 0) + days;
+        if (String(r.status || '').toUpperCase() === LeaveStatus.APPROVED) {
+          approved[leaveTypeId] = (approved[leaveTypeId] ?? 0) + days;
         } else {
-          pending[r.type] = (pending[r.type] ?? 0) + days;
+          pending[leaveTypeId] = (pending[leaveTypeId] ?? 0) + days;
         }
       });
     // รวม approved + pending เป็นยอดที่ใช้ (PENDING ถือว่า "จอง" วันลาไว้แล้ว)
@@ -306,18 +395,67 @@ const App: React.FC = () => {
     return { combined, approved, pending };
   }, [myRequests]);
 
+  const vacationFullYearEntitlement = useMemo(() => {
+    const normalizeJoinDateForCalc = (joinDateRaw?: string): string | null => {
+      const raw = String(joinDateRaw || '').trim();
+      if (!raw) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const isoPrefix = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoPrefix) return `${isoPrefix[1]}-${isoPrefix[2]}-${isoPrefix[3]}`;
+      const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slash) {
+        const dd = Number(slash[1]);
+        const mm = Number(slash[2]);
+        let yy = Number(slash[3]);
+        if (yy >= 2400) yy -= 543;
+        if (yy < 1900 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+        return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+      }
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+    };
+
+    const normalizedJoinDate = normalizeJoinDateForCalc(currentUserLive?.joinDate);
+    if (!normalizedJoinDate) return 0;
+    const [joinYearStr, joinMonthStr, joinDayStr] = normalizedJoinDate.split('-');
+    const joinYear = Number(joinYearStr);
+    const joinMonth = Number(joinMonthStr);
+    const joinDay = Number(joinDayStr);
+    if (!joinYear || !joinMonth || !joinDay) return 0;
+
+    const processYear = new Date().getFullYear();
+    const anniversaryTime = Date.UTC(joinYear + 1, joinMonth - 1, joinDay, 0, 0, 0);
+    const jan1Time = Date.UTC(processYear, 0, 1, 0, 0, 0);
+    const yearEndTime = Date.UTC(processYear, 11, 31, 0, 0, 0);
+
+    if (anniversaryTime > yearEndTime) return 0;
+    if (anniversaryTime < jan1Time) return 12;
+
+    const base = 12 - joinMonth + 1;
+    const adjustment = joinDay <= 15 ? 0 : joinDay <= 25 ? 0.5 : 1;
+    return Math.max(0, Math.min(12, Number((base - adjustment).toFixed(2))));
+  }, [currentUserLive?.joinDate]);
+
   const displayRequests = useMemo(() => {
     if (!currentUser) return [];
     const allUsers = getAllUsers();
     if (currentUser.role === UserRole.ADMIN) return requests;
     if (currentUser.role === UserRole.MANAGER) {
       const subordinateSet = getSubordinateIdSetRecursive(currentUser.id, allUsers);
-      if (subordinateSet.size > 0) return requests.filter(r => subordinateSet.has(r.userId));
+      if (subordinateSet.size > 0) {
+        const normalizedSubordinateSet = new Set(Array.from(subordinateSet).map((id) => normalizeId(id)));
+        return requests.filter((r) => normalizedSubordinateSet.has(normalizeId(r.userId)));
+      }
       // Fallback: hierarchy ไม่พบ — ใช้ direct managerId match
-      const directSubIds = new Set(allUsers.filter(u => u.managerId === currentUser.id).map(u => u.id));
-      return requests.filter(r => directSubIds.has(r.userId));
+      const directSubIds = new Set(
+        allUsers
+          .filter((u) => normalizeId(u.managerId) === normalizeId(currentUser.id))
+          .map((u) => normalizeId(u.id))
+      );
+      return requests.filter((r) => directSubIds.has(normalizeId(r.userId)));
     }
-    return requests.filter(r => r.userId === currentUser.id);
+    return requests.filter((r) => normalizeId(r.userId) === normalizeId(currentUser.id));
   }, [requests, currentUser]);
 
   /** สำหรับหน้า Report/Calendar: แสดงเฉพาะข้อมูลของผู้ใต้บังคับบัญชา — ไม่รวมข้อมูลของ Manager เอง
@@ -329,17 +467,13 @@ const App: React.FC = () => {
     const allReqs = getLeaveRequests();
     if (currentUser.role === UserRole.ADMIN) return allReqs;
     if (currentUser.role === UserRole.MANAGER) {
-      const subordinateSet = getSubordinateIdSetRecursive(currentUser.id, allUsers);
-      if (subordinateSet.size > 0) {
-        return allReqs.filter(r => subordinateSet.has(r.userId));
-      }
-      // Fallback: ลูกทีมหาจาก hierarchy ไม่เจอ — ลองตรวจสอบ direct manager-id match
-      const directSubIds = new Set(allUsers.filter(u => u.managerId === currentUser.id).map(u => u.id));
-      if (directSubIds.size > 0) {
-        return allReqs.filter(r => directSubIds.has(r.userId));
-      }
-      // Fallback สุดท้าย: แสดงทุกรายการใน cache ยกเว้น Manager เอง (กรณี hierarchy ยังไม่ได้ตั้งค่าใน DB)
-      return allReqs.filter(r => r.userId !== currentUser.id);
+      // รายงานในสังกัด: ยึด managerId จากข้อมูล users ในระบบเท่านั้น
+      const directSubIds = new Set(
+        allUsers
+          .filter((u) => normalizeId(u.managerId) === normalizeId(currentUser.id))
+          .map((u) => normalizeId(u.id))
+      );
+      return allReqs.filter((r) => directSubIds.has(normalizeId(r.userId)));
     }
     return displayRequests;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -361,6 +495,54 @@ const App: React.FC = () => {
   }, [requests, currentUser, reportTick]);
 
   const dashboardLeaveTypes = useMemo(() => currentUser ? getLeaveTypesForGender(currentUser.gender) : [], [currentUser]);
+  const leaveTypeLabelMap = useMemo(() => Object.fromEntries(getLeaveTypes().map(t => [t.id, t.label])), []);
+  const recentDashboardItems = useMemo(() => {
+    const leaveItems = myRequests.map((r) => ({
+      id: `leave-${r.id}`,
+      kind: 'leave' as const,
+      title: leaveTypeLabelMap[r.type] ?? r.type,
+      dateText: `${formatYmdAsDdMmBe(r.startDate)} ถึง ${formatYmdAsDdMmBe(r.endDate)} • ${calculateBusinessDays(r.startDate, r.endDate)} วันทำการ`,
+      detailText: `เหตุผลการลา: ${String(r.reason || '-').trim() || '-'}`,
+      occurredAt: String(r.submittedAt || r.startDate || ''),
+      status: STATUS_LABELS[r.status],
+      statusClass: STATUS_COLORS[r.status],
+      paidDate: '',
+      extraText: '',
+    }));
+    const expenseItems = myExpenseClaims.map((c) => {
+      const statusLabel = c.status === 'PAID'
+        ? 'อนุมัติแล้ว'
+        : c.status === 'APPROVED'
+          ? 'อนุมัติแล้ว'
+          : c.status === 'WAITING'
+            ? 'รออนุมัติ'
+            : c.status === 'REJECTED'
+              ? 'ไม่อนุมัติ'
+              : 'บันทึก';
+      const statusClass = c.status === 'PAID' || c.status === 'APPROVED'
+        ? 'bg-emerald-100 text-emerald-700'
+        : c.status === 'WAITING'
+          ? 'bg-amber-100 text-amber-700'
+          : c.status === 'REJECTED'
+            ? 'bg-rose-100 text-rose-700'
+            : 'bg-gray-100 text-gray-700';
+      return {
+        id: `exp-${c.id}`,
+        kind: 'expense' as const,
+        title: `ใบเบิก ${Number(c.totalAmount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`,
+        dateText: `วันที่รายการ ${formatYmdAsDdMmBe(c.claimDate)}`,
+        detailText: `โครงการ: ${String(c.projectSummary || '-').trim() || '-'} • ${Array.from(new Set((c.items || []).map((it) => expenseTypeLabelMap[it.expenseTypeId] || it.expenseTypeId).filter(Boolean))).join(', ') || '-'}`,
+        occurredAt: String(c.submittedAt || c.claimDate || ''),
+        status: statusLabel,
+        statusClass,
+        paidDate: c.paidDate ? formatYmdAsDdMmBe(c.paidDate) : '',
+        extraText: `รายละเอียด: ${String(c.detailSummary || c.adminNote || '-').trim() || '-'}`,
+      };
+    });
+    return [...leaveItems, ...expenseItems]
+      .sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)))
+      .slice(0, 5);
+  }, [calculateBusinessDays, expenseTypeLabelMap, leaveTypeLabelMap, myExpenseClaims, myRequests]);
   const visibleDashboardLeaveTypes = useMemo(() => {
     const all = dashboardLeaveTypes.filter(lt => lt.id !== 'OTHER');
     return showAllDashboardLeaveTypes ? all : all.filter(lt => DEFAULT_DASHBOARD_LEAVE_IDS.includes(lt.id));
@@ -369,7 +551,6 @@ const App: React.FC = () => {
     () => dashboardLeaveTypes.some(lt => lt.id !== 'OTHER' && !DEFAULT_DASHBOARD_LEAVE_IDS.includes(lt.id)),
     [dashboardLeaveTypes]
   );
-  const leaveTypeLabelMap = useMemo(() => Object.fromEntries(getLeaveTypes().map(t => [t.id, t.label])), []);
 
   const tenureYears = useMemo(() => {
     if (!currentUser) return 0;
@@ -580,7 +761,9 @@ const App: React.FC = () => {
             <div className="xl:col-span-2 space-y-8">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {visibleDashboardLeaveTypes.map(lt => {
-                  const baseQuota = currentUser.quotas[lt.id] ?? lt.defaultQuota;
+                  const baseQuota = lt.id === 'VACATION'
+                    ? vacationFullYearEntitlement
+                    : (currentUserLive?.quotas?.[lt.id] ?? lt.defaultQuota);
                   const quota = baseQuota;
                   const usedApproved = leaveUsage.approved[lt.id] || 0;
                   const usedPending = leaveUsage.pending[lt.id] || 0;
@@ -629,24 +812,35 @@ const App: React.FC = () => {
                   <button onClick={() => setActiveTab('history')} className="text-xs font-bold text-blue-600 hover:underline">ดูทั้งหมด</button>
                 </div>
                 <div className="space-y-4">
-                  {myRequests.slice(0, 5).map(req => (
-                    <div key={req.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-gray-200 transition">
+                  {recentDashboardItems.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-gray-200 transition">
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${STATUS_COLORS[req.status]}`}>
-                          {(leaveTypeLabelMap[req.type] ?? req.type).charAt(2)}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${item.kind === 'leave' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
+                          {item.kind === 'leave' ? 'ลา' : 'เบิก'}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{leaveTypeLabelMap[req.type] ?? req.type}</p>
-                          <p className="text-[10px] text-gray-500 font-bold">{formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}</p>
+                          <p className="text-sm font-bold text-gray-900">{item.title}</p>
+                          <p className="text-[10px] text-gray-500 font-bold">{item.dateText}</p>
+                          <p className="text-[10px] text-gray-700 font-bold">{item.detailText}</p>
+                          {item.kind === 'expense' && (
+                            <p className="text-[10px] text-gray-700 font-bold">
+                              {item.extraText || 'รายละเอียด: -'}
+                            </p>
+                          )}
+                          {item.kind === 'expense' && (
+                            <p className="text-[10px] text-violet-700 font-bold">
+                              วันทำจ่าย: {item.paidDate || '-'}
+                            </p>
+                          )}
                         </div>
                       </div>
-                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${STATUS_COLORS[req.status]}`}>
-                        {STATUS_LABELS[req.status]}
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${item.statusClass}`}>
+                        {item.status}
                       </span>
                     </div>
                   ))}
-                  {myRequests.length === 0 && (
-                     <p className="text-center py-4 text-gray-400 italic text-sm">ยังไม่มีรายการลา</p>
+                  {recentDashboardItems.length === 0 && (
+                     <p className="text-center py-4 text-gray-400 italic text-sm">ยังไม่มีรายการ</p>
                   )}
                 </div>
               </div>
@@ -721,7 +915,10 @@ const App: React.FC = () => {
                         <tr key={req.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4">
                             <p className="text-sm font-black text-gray-900">{leaveTypeLabelMap[req.type] ?? req.type}</p>
-                            <p className="text-[10px] text-gray-500 font-bold">{formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}</p>
+                            <p className="text-[10px] text-gray-500 font-bold">
+                              {formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}
+                              {' '}• {calculateBusinessDays(req.startDate, req.endDate)} วันทำการ
+                            </p>
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-xs text-gray-700 font-medium truncate max-w-xs">{req.reason}</p>

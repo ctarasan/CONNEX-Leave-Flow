@@ -739,7 +739,17 @@ export const setLeaveTypeActive = (id: string, active: boolean): void | Promise<
 };
 
 export const deleteLeaveType = (id: string): void | Promise<void> => {
-  return setLeaveTypeActive(id, false);
+  const targetId = String(id ?? '').trim();
+  if (!targetId) return;
+  if (isApiMode()) {
+    return api.deleteLeaveType(targetId).then((res) => {
+      const list = toArray(res).map(normalizeLeaveType);
+      _leaveTypesCache = normalizeLeaveTypeList(list);
+    }) as Promise<void>;
+  }
+  const types = getLeaveTypes().filter((t) => String(t.id).toUpperCase() !== targetId.toUpperCase());
+  if (types.length === getLeaveTypes().length) return;
+  return saveLeaveTypes(types);
 };
 
 export const getDefaultQuotaForLeaveType = (leaveTypeId: string): number => {
@@ -786,9 +796,11 @@ function inferGenderFromName(name: string): Gender {
 function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const u of users) {
-    const mid = u.managerId ?? '';
+    const mid = normalizeUserId(u.managerId ?? '');
+    const uid = normalizeUserId(u.id);
+    if (!uid) continue;
     if (!map.has(mid)) map.set(mid, []);
-    map.get(mid)!.push(u.id);
+    map.get(mid)!.push(uid);
   }
   return map;
 }
@@ -796,12 +808,17 @@ function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
 /** รายชื่อ id พนักงานทั้งหมดในสายงาน (รวมลูกทีมของลูกทีม) — O(n) ด้วย BFS จาก map ที่สร้างครั้งเดียว */
 export function getSubordinateIdsRecursive(managerId: string, users: User[]): string[] {
   if (users.length === 0) return [];
+  const managerIdNorm = normalizeUserId(managerId);
+  if (!managerIdNorm) return [];
   const map = buildManagerToChildrenMap(users);
   const result: string[] = [];
-  const queue: string[] = map.get(managerId) ?? [];
+  const queue: string[] = [...(map.get(managerIdNorm) ?? [])];
+  const visited = new Set<string>();
   let i = 0;
   while (i < queue.length) {
-    const id = queue[i++];
+    const id = normalizeUserId(queue[i++]);
+    if (!id || id === managerIdNorm || visited.has(id)) continue;
+    visited.add(id);
     result.push(id);
     const children = map.get(id);
     if (children) for (const c of children) queue.push(c);

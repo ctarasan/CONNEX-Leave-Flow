@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProject, TimesheetTaskTypeDefinition, ExpenseTypeDefinition } from '../types';
-import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, setLeaveTypeActive, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
+import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, setLeaveTypeActive, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
 import { formatYmdAsDdMmBe } from '../utils';
@@ -32,6 +32,11 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 const GENDER_LABELS: Record<Gender, string> = { male: 'ชาย', female: 'หญิง' };
 const APPLICABLE_LABELS: Record<'male' | 'female' | 'both', string> = { male: 'ชายเท่านั้น', female: 'หญิงเท่านั้น', both: 'ทั้งชายและหญิง' };
+
+/** ประเภทมาตรฐาน — ห้ามลบถาวร (ใช้ปิดใช้แทน) */
+const PROTECTED_LEAVE_TYPE_IDS = new Set([
+  'SICK', 'VACATION', 'PERSONAL', 'MATERNITY', 'STERILIZATION', 'PATERNITY', 'ORDINATION', 'MILITARY', 'OTHER',
+]);
 
 function formatUpdatedAt(raw?: string): string {
   const s = String(raw ?? '').trim();
@@ -103,6 +108,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [holidayUpdatedAt, setHolidayUpdatedAt] = useState<Record<string, string>>({});
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayName, setNewHolidayName] = useState('');
+  const [editingHolidayDate, setEditingHolidayDate] = useState<string | null>(null);
+  const [editHolidayDateValue, setEditHolidayDateValue] = useState('');
+  const [editHolidayNameValue, setEditHolidayNameValue] = useState('');
   const [latePolicy, setLatePolicy] = useState<AttendanceLatePolicy>(getAttendanceLatePolicy());
   const [timesheetProjects, setTimesheetProjects] = useState<TimesheetProject[]>([]);
   const [editProject, setEditProject] = useState<TimesheetProject | null>(null);
@@ -116,6 +124,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [projectTab, setProjectTab] = useState<'project' | 'task'>('project');
   const [expenseTypes, setExpenseTypes] = useState<ExpenseTypeDefinition[]>([]);
   const [newExpenseLabel, setNewExpenseLabel] = useState('');
+  const [editingExpenseType, setEditingExpenseType] = useState<ExpenseTypeDefinition | null>(null);
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
   const resetAddEmployeeForm = () => {
@@ -554,6 +563,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     });
   };
 
+  const handleDeleteLeaveType = (lt: LeaveTypeDefinition) => {
+    const uid = String(lt.id).toUpperCase();
+    if (PROTECTED_LEAVE_TYPE_IDS.has(uid)) {
+      showAlert('ไม่สามารถลบประเภทวันลามาตรฐานของระบบได้ กรุณาใช้การปิดใช้แทน');
+      return;
+    }
+    showConfirm(
+      `ต้องการลบประเภทวันลา "${lt.label}" ออกจากระบบถาวรหรือไม่?\n(ทำได้เฉพาะประเภทที่เพิ่มเอง และไม่มีคำขอลาอ้างอิงประเภทนี้)`,
+      () => {
+        runAction(`admin-delete-leave-type-${lt.id}`, async () => {
+          try {
+            const result = deleteLeaveType(lt.id);
+            if (result != null && typeof (result as Promise<void>).then === 'function') {
+              await (result as Promise<void>);
+            }
+            refreshLeaveTypes();
+            if (editingLeaveType?.id === lt.id) setEditingLeaveType(null);
+            showAlert('ลบประเภทวันลาเรียบร้อยแล้ว');
+          } catch (e) {
+            showAlert(e instanceof Error ? e.message : 'ลบประเภทวันลาไม่สำเร็จ');
+          }
+        });
+      }
+    );
+  };
+
   const handleToggleLeaveTypeActive = (lt: LeaveTypeDefinition) => {
     const nextActive = !lt.isActive;
     showConfirm(
@@ -578,6 +613,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
         });
       }
     );
+  };
+
+  const handleToggleExpenseTypeActive = (t: ExpenseTypeDefinition) => {
+    const nextActive = !t.isActive;
+    showConfirm(
+      nextActive
+        ? `ยืนยันเปิดใช้ประเภท "${t.label}" อีกครั้งหรือไม่?`
+        : `ยืนยันปิดใช้ประเภท "${t.label}" หรือไม่?\n(พนักงานจะไม่เห็นตัวเลือกนี้ในใบเบิก)`,
+      () => {
+        runAction(`admin-toggle-expense-type-${t.id}`, async () => {
+          const prev = t;
+          setExpenseTypes((cur) => cur.map((x) => (x.id === t.id ? { ...x, isActive: nextActive } : x)));
+          try {
+            await postExpenseType({ id: t.id, label: t.label, isActive: nextActive });
+            await refreshExpenseTypes();
+            showAlert(nextActive ? 'เปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว' : 'ปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
+          } catch (err) {
+            setExpenseTypes((cur) => cur.map((x) => (x.id === t.id ? prev : x)));
+            showAlert(err instanceof Error ? err.message : 'อัปเดตสถานะไม่สำเร็จ');
+          }
+        });
+      }
+    );
+  };
+
+  const handleSaveEditedExpenseType = () => {
+    if (!editingExpenseType) return;
+    const label = editingExpenseType.label.trim();
+    if (!label) return;
+    runAction(`admin-save-expense-type-${editingExpenseType.id}`, async () => {
+      try {
+        await postExpenseType({
+          id: editingExpenseType.id,
+          label,
+          isActive: editingExpenseType.isActive !== false,
+        });
+        await refreshExpenseTypes();
+        setEditingExpenseType(null);
+        showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว');
+      } catch (err) {
+        showAlert(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
+      }
+    });
   };
 
   const handleDeleteEmployee = (user: User) => {
@@ -681,6 +759,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     }
   };
 
+  const handleStartEditHoliday = (date: string) => {
+    setEditingHolidayDate(date);
+    setEditHolidayDateValue(date);
+    setEditHolidayNameValue(holidays[date] || '');
+  };
+
+  const handleCancelEditHoliday = () => {
+    setEditingHolidayDate(null);
+    setEditHolidayDateValue('');
+    setEditHolidayNameValue('');
+  };
+
+  const handleSaveEditedHoliday = (oldDate: string) => {
+    runAction(`admin-edit-holiday-${oldDate}`, async () => {
+      const nextDate = String(editHolidayDateValue || '').trim();
+      const nextName = String(editHolidayNameValue || '').trim().slice(0, FIELD_MAX_LENGTHS.holidayName);
+      if (!nextDate || !nextName) {
+        showAlert('กรุณาระบุวันที่และชื่อวันหยุดให้ครบถ้วน');
+        return;
+      }
+      if (nextDate !== oldDate && holidays[nextDate]) {
+        showAlert('วันที่ที่เลือกมีวันหยุดอยู่แล้ว กรุณาเลือกวันอื่น');
+        return;
+      }
+
+      const saveResult = saveHoliday(nextDate, nextName);
+      if (saveResult && typeof (saveResult as Promise<void>).then === 'function') {
+        await (saveResult as Promise<void>);
+      }
+
+      if (nextDate !== oldDate) {
+        const deleteResult = deleteHoliday(oldDate);
+        if (deleteResult && typeof (deleteResult as Promise<void>).then === 'function') {
+          await (deleteResult as Promise<void>);
+        }
+      }
+
+      setHolidays(getHolidays());
+      await refreshHolidaysAudit();
+      handleCancelEditHoliday();
+    });
+  };
+
   const sortedHolidayDates = Object.keys(holidays).sort();
   const activeProjects = useMemo(
     () => timesheetProjects.filter((p) => p.isActive),
@@ -690,9 +811,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     () => [...leaveTypes].sort((a, b) => (a.order - b.order) || String(a.id).localeCompare(String(b.id))),
     [leaveTypes]
   );
+  const sortedExpenseTypesForAdmin = useMemo(
+    () => [...expenseTypes].sort((a, b) => a.label.localeCompare(b.label, 'th')),
+    [expenseTypes]
+  );
   const projectPagination = useTablePagination(activeProjects);
   const employeePagination = useTablePagination(visibleEmployeeUsers);
   const leaveTypePagination = useTablePagination(sortedLeaveTypesForAdmin);
+  const expenseTypePagination = useTablePagination(sortedExpenseTypesForAdmin);
   const holidayPagination = useTablePagination(sortedHolidayDates);
   const resetProjectForm = () => {
     setEditProject(null);
@@ -1057,7 +1183,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   const defaultVacation = getLeaveTypes().find(t => t.id === 'VACATION')?.defaultQuota ?? 0;
                   return employeePagination.pagedItems.map(user => {
                     const manager = users.find(u => u.id === user.managerId);
-                    const effectiveQuota = user.quotas['VACATION'] ?? defaultVacation;
+                    const effectiveQuota = computeVacationEntitlementByRules(user).fullYearEntitlement ?? defaultVacation;
                     const used = vacationUsedByUser[user.id] ?? 0;
                     const remaining = effectiveQuota - used;
                     return (
@@ -1268,7 +1394,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                     </td>
                     <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(lt.updatedByName, lt.updatedAt)}</td>
                     <td className="px-6 py-4 text-right">
-                      <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800">แก้ไข</button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button type="button" onClick={() => setEditingLeaveType({ ...lt })} className="text-xs font-black text-blue-600 hover:text-blue-800 uppercase tracking-tighter">
+                          แก้ไข
+                        </button>
+                        <span className="text-gray-200">|</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLeaveType(lt)}
+                          disabled={PROTECTED_LEAVE_TYPE_IDS.has(String(lt.id).toUpperCase()) || isActionBusy(`admin-delete-leave-type-${lt.id}`)}
+                          aria-busy={isActionBusy(`admin-delete-leave-type-${lt.id}`)}
+                          className="text-xs font-black text-rose-600 hover:text-rose-800 uppercase tracking-tighter disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          ลบ
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1350,19 +1490,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       ) : activeSubTab === 'expensetypes' ? (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-            <h2 className="text-xl font-bold text-gray-900">จัดการประเภทค่าใช้จ่าย (Admin)</h2>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <label className="flex-1 min-w-[240px] text-[10px] font-black text-gray-400 uppercase tracking-widest">
-              ชื่อประเภทค่าใช้จ่าย (Max Length = {FIELD_MAX_LENGTHS.expenseTypeLabel})
-              <input
-                value={newExpenseLabel}
-                maxLength={FIELD_MAX_LENGTHS.expenseTypeLabel}
-                onChange={(e) => setNewExpenseLabel(e.target.value)}
-                placeholder="เช่น ค่าเดินทาง / ค่าเครื่องเขียน / ค่า Messenger"
-                className="mt-1 w-full px-3 py-2 border rounded-xl text-sm font-bold normal-case tracking-normal text-gray-900"
-              />
-            </label>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+              </div>
+              จัดการประเภทค่าใช้จ่าย
+            </h2>
             <button
               type="button"
               onClick={() => {
@@ -1372,7 +1505,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   try {
                     await postExpenseType({ label, isActive: true });
                     setNewExpenseLabel('');
-                    refreshExpenseTypes();
+                    await refreshExpenseTypes();
                     showAlert('เพิ่มประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
                   } catch (err) {
                     showAlert(err instanceof Error ? err.message : 'เพิ่มประเภทค่าใช้จ่ายไม่สำเร็จ');
@@ -1381,68 +1514,147 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               }}
               disabled={isActionBusy('admin-add-expense-type')}
               aria-busy={isActionBusy('admin-add-expense-type')}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black"
+              className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition"
             >
-              เพิ่มประเภท
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              เพิ่มประเภทค่าใช้จ่าย
             </button>
           </div>
-          <div className="space-y-2">
-            {expenseTypes.map((t) => (
-              <div key={t.id} className="flex items-center justify-between border rounded-xl px-3 py-2">
-                <div>
-                  <span className={`text-sm font-bold ${t.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{t.label}</span>
-                  <p className="text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(t.updatedByName, t.updatedAt)}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const updated = window.prompt('แก้ไขชื่อประเภทค่าใช้จ่าย', t.label);
-                      if (!updated || !updated.trim()) return;
-                      runAction(`admin-edit-expense-type-${t.id}`, async () => {
-                        try {
-                          await postExpenseType({ id: t.id, label: updated.trim(), isActive: true });
-                          refreshExpenseTypes();
-                          showAlert('บันทึกการแก้ไขเรียบร้อยแล้ว');
-                        } catch (err) {
-                          showAlert(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
-                        }
-                      });
-                    }}
-                    disabled={isActionBusy(`admin-edit-expense-type-${t.id}`)}
-                    aria-busy={isActionBusy(`admin-edit-expense-type-${t.id}`)}
-                    className="text-xs font-black text-blue-600"
-                  >
-                    แก้ไข
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      showConfirm(`ต้องการปิดใช้ประเภท "${t.label}" หรือไม่?`, () => {
-                        runAction(`admin-delete-expense-type-${t.id}`, async () => {
-                          try {
-                            await deleteExpenseType(t.id);
-                            refreshExpenseTypes();
-                            showAlert('ปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
-                          } catch (err) {
-                            showAlert(err instanceof Error ? err.message : 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ');
-                          }
-                        });
-                      });
-                    }}
-                    disabled={isActionBusy(`admin-delete-expense-type-${t.id}`)}
-                    aria-busy={isActionBusy(`admin-delete-expense-type-${t.id}`)}
-                    className="text-xs font-black text-rose-600"
-                  >
-                    ลบ
-                  </button>
+          <p className="text-xs text-gray-500 mb-4">กำหนดชื่อประเภทสำหรับใบเบิก — ใช้ปิดใช้เพื่อซ่อนจากรายการเลือกโดยไม่ลบข้อมูลในระบบ</p>
+          <div className="flex flex-wrap gap-3 mb-6 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+            <label className="flex-1 min-w-[240px] text-[10px] font-black text-gray-400 uppercase tracking-widest">
+              ชื่อประเภทค่าใช้จ่าย (Max Length = {FIELD_MAX_LENGTHS.expenseTypeLabel})
+              <input
+                value={newExpenseLabel}
+                maxLength={FIELD_MAX_LENGTHS.expenseTypeLabel}
+                onChange={(e) => setNewExpenseLabel(e.target.value)}
+                placeholder="เช่น ค่าเดินทาง / ค่าเครื่องเขียน / ค่า Messenger"
+                className="mt-1 w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-sm font-bold normal-case tracking-normal text-gray-900 outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-gray-100">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">ชื่อประเภท</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-center">ปิดใช้</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
+                  <th className="px-6 py-4 font-black text-gray-400 uppercase text-[10px] tracking-widest text-right">การจัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {expenseTypePagination.pagedItems.map((t) => (
+                  <tr key={t.id} className={`hover:bg-gray-50 ${t.isActive ? '' : 'opacity-70'}`}>
+                    <td className={`px-6 py-4 font-bold text-gray-900 ${t.isActive ? '' : 'line-through decoration-gray-400'}`}>{t.label}</td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={t.isActive === false}
+                        aria-busy={isActionBusy(`admin-toggle-expense-type-${t.id}`)}
+                        disabled={isActionBusy(`admin-toggle-expense-type-${t.id}`)}
+                        title={t.isActive ? 'ปิดใช้: OFF' : 'ปิดใช้: ON'}
+                        onClick={() => handleToggleExpenseTypeActive(t)}
+                        className={`relative inline-flex h-7 w-14 items-center rounded-full border transition ${
+                          t.isActive ? 'bg-gray-200 border-gray-300' : 'bg-emerald-500 border-emerald-600'
+                        }`}
+                      >
+                        <span className="sr-only">ปิดใช้ประเภทค่าใช้จ่าย</span>
+                        <span className={`absolute left-1 text-[10px] font-black tracking-widest text-white transition-opacity ${t.isActive ? 'opacity-0' : 'opacity-100'}`}>ON</span>
+                        <span className={`absolute right-1 text-[10px] font-black tracking-widest text-gray-500 transition-opacity ${t.isActive ? 'opacity-100' : 'opacity-0'}`}>OFF</span>
+                        <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${t.isActive ? 'translate-x-0' : 'translate-x-7'}`} />
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(t.updatedByName, t.updatedAt)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingExpenseType({ ...t })}
+                          className="text-xs font-black text-blue-600 hover:text-blue-800 uppercase tracking-tighter"
+                        >
+                          แก้ไข
+                        </button>
+                        <span className="text-gray-200">|</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            showConfirm(`ต้องการปิดใช้ประเภท "${t.label}" (ลบจากการใช้งาน) หรือไม่?`, () => {
+                              runAction(`admin-delete-expense-type-${t.id}`, async () => {
+                                try {
+                                  await deleteExpenseType(t.id);
+                                  await refreshExpenseTypes();
+                                  if (editingExpenseType?.id === t.id) setEditingExpenseType(null);
+                                  showAlert('ปิดใช้ประเภทค่าใช้จ่ายเรียบร้อยแล้ว');
+                                } catch (err) {
+                                  showAlert(err instanceof Error ? err.message : 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ');
+                                }
+                              });
+                            });
+                          }}
+                          disabled={isActionBusy(`admin-delete-expense-type-${t.id}`)}
+                          aria-busy={isActionBusy(`admin-delete-expense-type-${t.id}`)}
+                          className="text-xs font-black text-rose-600 hover:text-rose-800 uppercase tracking-tighter disabled:opacity-40"
+                        >
+                          ลบ
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedExpenseTypesForAdmin.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-gray-400 font-bold italic">ยังไม่มีประเภทค่าใช้จ่าย</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <TablePagination
+            page={expenseTypePagination.page}
+            pageSize={expenseTypePagination.pageSize}
+            totalItems={expenseTypePagination.totalItems}
+            totalPages={expenseTypePagination.totalPages}
+            rangeStart={expenseTypePagination.rangeStart}
+            rangeEnd={expenseTypePagination.rangeEnd}
+            onPageChange={expenseTypePagination.setPage}
+            onPageSizeChange={expenseTypePagination.setPageSize}
+          />
+
+          {editingExpenseType && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
+                <h3 className="text-lg font-black text-gray-900 mb-4">แก้ไขประเภทค่าใช้จ่าย</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ชื่อประเภท (Max Length = {FIELD_MAX_LENGTHS.expenseTypeLabel})</label>
+                    <input
+                      type="text"
+                      maxLength={FIELD_MAX_LENGTHS.expenseTypeLabel}
+                      value={editingExpenseType.label}
+                      onChange={(e) => setEditingExpenseType((prev) => (prev ? { ...prev, label: e.target.value } : prev))}
+                      className="w-full p-3 border-2 border-gray-100 rounded-xl outline-none focus:border-indigo-500 text-sm font-bold"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveEditedExpenseType}
+                      disabled={isActionBusy(`admin-save-expense-type-${editingExpenseType.id}`)}
+                      aria-busy={isActionBusy(`admin-save-expense-type-${editingExpenseType.id}`)}
+                      className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50"
+                    >
+                      บันทึก
+                    </button>
+                    <button type="button" onClick={() => setEditingExpenseType(null)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm">
+                      ยกเลิก
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))}
-            {expenseTypes.length === 0 && (
-              <div className="text-sm text-gray-400 italic py-6 text-center">ยังไม่มีประเภทค่าใช้จ่าย</div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       ) : activeSubTab === 'vacationpolicy' ? (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
@@ -1534,6 +1746,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                   value={newHolidayDate}
                   onChange={setNewHolidayDate}
                   placeholder="เลือกวันหยุด"
+                  disableHolidayWeekend={false}
                 />
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">
@@ -1557,44 +1770,105 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
           </div>
           <div className="lg:col-span-2">
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm leading-snug">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันที่</th>
-                    <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันหยุด</th>
-                    <th className="px-6 py-4 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
-                    <th className="px-6 py-4 text-right"></th>
+                    <th className="px-4 py-2 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันที่</th>
+                    <th className="px-4 py-2 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">วันหยุด</th>
+                    <th className="px-4 py-2 text-left font-black text-gray-400 uppercase text-[10px] tracking-widest">แก้ไขล่าสุดโดย</th>
+                    <th className="px-4 py-2 text-right"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {holidayPagination.pagedItems.map(date => (
                     <tr key={date} className="hover:bg-gray-50 transition">
-                      <td className="px-6 py-4 font-bold text-gray-700">
-                        {formatYmdAsDdMmBe(date)}
+                      <td className="px-4 py-2 align-middle font-bold text-gray-700">
+                        {editingHolidayDate === date ? (
+                          <div className="w-36">
+                            <DatePicker
+                              label=""
+                              value={editHolidayDateValue}
+                              onChange={setEditHolidayDateValue}
+                              size="compact"
+                              placeholder="วว/ดด/ปปปป"
+                              disableHolidayWeekend={false}
+                            />
+                          </div>
+                        ) : (
+                          formatYmdAsDdMmBe(date)
+                        )}
                       </td>
-                      <td className="px-6 py-4 font-bold text-gray-900">{holidays[date]}</td>
-                      <td className="px-6 py-4 text-[11px] font-medium text-gray-500">{formatUpdatedByWithTime(holidayUpdatedBy[date], holidayUpdatedAt[date])}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteHoliday(date)}
-                          disabled={isActionBusy(`admin-delete-holiday-${date}`)}
-                          aria-busy={isActionBusy(`admin-delete-holiday-${date}`)}
-                          className="text-rose-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition disabled:opacity-40"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
+                      <td className="px-4 py-2 align-middle font-bold text-gray-900">
+                        {editingHolidayDate === date ? (
+                          <input
+                            type="text"
+                            value={editHolidayNameValue}
+                            onChange={(e) => setEditHolidayNameValue(e.target.value)}
+                            maxLength={FIELD_MAX_LENGTHS.holidayName}
+                            className="w-full px-2 py-1.5 border-2 border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none focus:border-blue-500 bg-white"
+                          />
+                        ) : (
+                          holidays[date]
+                        )}
+                      </td>
+                      <td className="px-4 py-2 align-middle text-[11px] font-medium text-gray-500 leading-snug">{formatUpdatedByWithTime(holidayUpdatedBy[date], holidayUpdatedAt[date])}</td>
+                      <td className="px-4 py-2 align-middle text-right">
+                        <div className="inline-flex items-center gap-0.5">
+                          {editingHolidayDate === date ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditedHoliday(date)}
+                                disabled={isActionBusy(`admin-edit-holiday-${date}`)}
+                                aria-busy={isActionBusy(`admin-edit-holiday-${date}`)}
+                                className="text-emerald-600 hover:text-emerald-700 p-1 rounded-md hover:bg-emerald-50 transition disabled:opacity-40"
+                                title="บันทึก"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditHoliday}
+                                className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition"
+                                title="ยกเลิก"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditHoliday(date)}
+                                className="text-blue-500 hover:text-blue-700 p-1 rounded-md hover:bg-blue-50 transition"
+                                title="แก้ไข"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.586-9.414a2 2 0 112.828 2.828L12 14l-4 1 1-4 8.414-8.414z" /></svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteHoliday(date)}
+                                disabled={isActionBusy(`admin-delete-holiday-${date}`)}
+                                aria-busy={isActionBusy(`admin-delete-holiday-${date}`)}
+                                className="text-rose-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition disabled:opacity-40"
+                                title="ลบ"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {sortedHolidayDates.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-6 py-12 text-center text-gray-400 font-bold italic">ไม่พบข้อมูลวันหยุด</td>
+                      <td colSpan={4} className="px-4 py-8 text-center text-gray-400 font-bold italic">ไม่พบข้อมูลวันหยุด</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="px-6 pb-4">
+            <div className="px-4 pb-3">
               <TablePagination
                 page={holidayPagination.page}
                 pageSize={holidayPagination.pageSize}

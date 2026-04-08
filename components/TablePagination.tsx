@@ -43,6 +43,8 @@ interface TablePaginationProps {
   rangeEnd: number;
   onPageChange: (next: number) => void;
   onPageSizeChange: (next: number) => void;
+  leftOffsetPx?: number;
+  rightOffsetPx?: number;
 }
 
 const TablePagination: React.FC<TablePaginationProps> = ({
@@ -54,13 +56,15 @@ const TablePagination: React.FC<TablePaginationProps> = ({
   rangeEnd,
   onPageChange,
   onPageSizeChange,
+  leftOffsetPx = 0,
+  rightOffsetPx = 0,
 }) => {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
-      <p className="text-xs font-bold text-gray-500">
+      <p className="text-xs font-bold text-gray-500" style={{ transform: `translateX(${leftOffsetPx}px)` }}>
         แสดง {rangeStart}-{rangeEnd} จากทั้งหมด {totalItems} รายการ
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" style={{ transform: `translateX(${rightOffsetPx}px)` }}>
         <label className="text-xs font-bold text-gray-500">จำนวนต่อหน้า</label>
         <select
           value={pageSize}
