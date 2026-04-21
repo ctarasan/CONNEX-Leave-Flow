@@ -1,7 +1,7 @@
 import { LeaveStatus } from './types';
 
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
-export const APP_VERSION = '2.0.0';
+export const APP_VERSION = '4.0.1';
 
 /** แปลงเวลา build (จาก Vite define) เป็นข้อความไทย — อัปเดตอัตโนมัติทุกครั้งที่ build/deploy */
 function formatAppLastUpdatedFromBuild(): string {
