@@ -408,16 +408,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const handleSave = () => {
     if (!editingUser) return;
     runAction('admin-save-user', async () => {
+      const name = editingUser.name.trim();
+      const email = editingUser.email.trim();
+      const position = editingUser.position.trim();
+      const department = editingUser.department.trim();
+      const joinDate = String(editingUser.joinDate || '').trim();
+      if (!name || !email || !position || !department || !joinDate) {
+        showAlert('กรุณากรอกชื่อ อีเมล ตำแหน่ง แผนก และวันเริ่มงานให้ครบถ้วน');
+        return;
+      }
+      if (users.some((u) => u.id !== editingUser.id && u.email.toLowerCase() === email.toLowerCase())) {
+        showAlert('อีเมลนี้มีในระบบแล้ว (ผู้ใช้อื่น)');
+        return;
+      }
       if (editingUser.isResigned === true && !String(editingUser.resignedDate || '').trim()) {
         showAlert('กรุณาเลือกวันที่ลาออก');
         return;
       }
       const toSaveBase: User = {
         ...editingUser,
-        name: editingUser.name.trim(),
-        email: editingUser.email.trim(),
-        position: editingUser.position.trim(),
-        department: editingUser.department.trim(),
+        name,
+        email,
+        position,
+        department,
+        joinDate,
         resignedDate: editingUser.isResigned ? String(editingUser.resignedDate || '').trim() : '',
         password: editPassword.trim() || editingUser.password,
       };
@@ -1971,15 +1985,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               </div>
               แก้ไขข้อมูล: {editingUser.name}
             </h3>
+            <p className="text-[11px] font-bold text-gray-500 mb-4">
+              <span className="text-red-500">*</span> Required field
+            </p>
 
             <div className="space-y-4 mb-6">
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ชื่อ-นามสกุล (Max Length = {FIELD_MAX_LENGTHS.employeeName})</label>
-                <input type="text" maxLength={FIELD_MAX_LENGTHS.employeeName} value={editingUser.name} onChange={(e) => setEditingUser(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  ชื่อ-นามสกุล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.employeeName})
+                </label>
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={editingUser.name} onChange={(e) => setEditingUser(prev => prev ? { ...prev, name: e.target.value } : prev)} placeholder="นาย/นาง/นางสาว ..." className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">อีเมล (Max Length = {FIELD_MAX_LENGTHS.email})</label>
-                <input type="email" maxLength={FIELD_MAX_LENGTHS.email} value={editingUser.email} onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  อีเมล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.email})
+                </label>
+                <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={editingUser.email} onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : prev)} placeholder="email@company.com" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">เปลี่ยนรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน) (Max Length = {FIELD_MAX_LENGTHS.password})</label>
@@ -2004,16 +2025,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ตำแหน่ง (Max Length = {FIELD_MAX_LENGTHS.position})</label>
-                <input type="text" maxLength={FIELD_MAX_LENGTHS.position} value={editingUser.position} onChange={(e) => setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  ตำแหน่ง <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.position})
+                </label>
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={editingUser.position} onChange={(e) => setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">แผนก (Max Length = {FIELD_MAX_LENGTHS.department})</label>
-                <input type="text" maxLength={FIELD_MAX_LENGTHS.department} value={editingUser.department} onChange={(e) => setEditingUser(prev => prev ? { ...prev, department: e.target.value } : prev)} className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  แผนก <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.department})
+                </label>
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={editingUser.department} onChange={(e) => setEditingUser(prev => prev ? { ...prev, department: e.target.value } : prev)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">วันเริ่มงาน</label>
-                <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" />
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
+                  วันเริ่มงาน <span className="text-red-500">*</span>
+                </label>
+                <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" required />
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -2046,6 +2073,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                       value={editingUser.resignedDate || ''}
                       onChange={(v) => setEditingUser(prev => prev ? { ...prev, resignedDate: v } : prev)}
                       label=""
+                      required
                       disableHolidayWeekend={false}
                     />
                   </div>
