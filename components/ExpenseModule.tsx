@@ -14,7 +14,7 @@ import {
 } from '../api';
 import { getAllUsers, getTimesheetProjectsForUser } from '../store';
 import DatePicker from './DatePicker';
-import { formatYmdAsDdMmBe } from '../utils';
+import { formatYmdAsDdMmBe, formatDisplayDate } from '../utils';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import TablePagination, { useTablePagination } from './TablePagination';
 import { FIELD_MAX_LENGTHS } from '../constants';
@@ -835,12 +835,12 @@ const ExpenseModule: React.FC<{ currentUser: User }> = ({ currentUser }) => {
               <div className="border rounded-lg p-3 min-h-[100px]">
                 <p className="font-bold mb-4">ผู้อนุมัติ</p>
                 <p>ลงชื่อ {detail.approverName || '....................................................'}</p>
-                <p>วันที่ {detail.approvedAt ? formatYmdAsDdMmBe(detail.approvedAt) : '....................................................'}</p>
+                <p>วันที่ {detail.approvedAt ? formatDisplayDate(detail.approvedAt) : '....................................................'}</p>
               </div>
               <div className="border rounded-lg p-3 min-h-[100px]">
                 <p className="font-bold mb-4">การเงิน/บัญชี</p>
                 <p>ลงชื่อ {detail.paidByName || (detail.status === 'PAID' ? 'ผู้ดูแลระบบ' : '....................................................')}</p>
-                <p>วันที่ {(detail.paidSetAt || detail.paidDate) ? formatYmdAsDdMmBe(detail.paidSetAt || detail.paidDate || '') : '....................................................'}</p>
+                <p>วันที่ {(detail.paidSetAt || detail.paidDate) ? formatDisplayDate(detail.paidSetAt || detail.paidDate || '') : '....................................................'}</p>
               </div>
             </div>
           </div>

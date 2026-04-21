@@ -16,7 +16,7 @@ import ProjectTimesheetReport from './components/ProjectTimesheetReport';
 import ExpenseModule from './components/ExpenseModule';
 import Login from './components/Login';
 import { STATUS_LABELS, STATUS_COLORS, HOLIDAYS_2026, APP_TITLE_WITH_VERSION, APP_LAST_UPDATED } from './constants';
-import { todayLocalYmd, formatYmdAsDdMmBe, formatBangkokDateAsDdMmBe, formatTimeAsHm } from './utils';
+import { todayLocalYmd, formatYmdAsDdMmBe, formatBangkokDateAsDdMmBe, formatTimeAsHm, formatDisplayDateTime } from './utils';
 import { useAlert } from './AlertContext';
 import { BarChart3, Clock3, History, Home, ReceiptText, Settings2 } from 'lucide-react';
 
@@ -286,7 +286,7 @@ const App: React.FC = () => {
     const onSessionReplaced = (e: Event) => {
       const d = (e as CustomEvent<{ loggedInFromIp?: string; loggedInAt?: string; userAgent?: string }>)?.detail ?? {};
       const ip = d.loggedInFromIp?.trim() || 'ไม่ทราบ';
-      const at = d.loggedInAt ? new Date(d.loggedInAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      const at = d.loggedInAt ? formatDisplayDateTime(d.loggedInAt) : '';
       const ua = d.userAgent?.trim() || '';
       let msg = 'มีการใช้งานบนอุปกรณ์อื่นแล้ว\n\n';
       msg += `IP Address: ${ip}\n`;
