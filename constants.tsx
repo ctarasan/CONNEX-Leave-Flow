@@ -3,8 +3,30 @@ import { LeaveStatus } from './types';
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
 export const APP_VERSION = '2.0.0';
 
-/** วันที่และเวลาที่ปรับแก้ล่าสุด (อัปเดตทุกครั้งที่ release) */
-export const APP_LAST_UPDATED = '4 มี.ค. 2568, 12:00 น.';
+/** แปลงเวลา build (จาก Vite define) เป็นข้อความไทย — อัปเดตอัตโนมัติทุกครั้งที่ build/deploy */
+function formatAppLastUpdatedFromBuild(): string {
+  try {
+    const iso = typeof __APP_BUILD_ISO__ !== 'undefined' ? __APP_BUILD_ISO__ : '';
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    const s = d.toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return `${s} น.`;
+  } catch {
+    return '—';
+  }
+}
+
+/** วันที่และเวลาที่ build ล่าสุด (จากเซิร์ฟเวอร์ build / Vercel) */
+export const APP_LAST_UPDATED = formatAppLastUpdatedFromBuild();
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
 export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}`;

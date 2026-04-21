@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        /** ตั้งตอน `vite build` / เริ่ม dev — ใช้แสดง "อัปเดตโค้ดล่าสุด" บน UI */
+        __APP_BUILD_ISO__: JSON.stringify(new Date().toISOString()),
       },
       resolve: {
         alias: {
