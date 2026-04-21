@@ -3,7 +3,7 @@ import { User, UserRole, Gender, LeaveTypeDefinition, LeaveStatus, TimesheetProj
 import { AttendanceLatePolicy, calculateLatePenaltyDays, getAllUsers, getAttendanceRecords, loadAttendanceForUser, loadFromApi, updateUser, addUser, deleteUser, getHolidays, saveHoliday, deleteHoliday, getLeaveTypes, saveLeaveTypes, addLeaveType, updateLeaveType, setLeaveTypeActive, deleteLeaveType, getLeaveRequests, getAttendanceLatePolicy, saveAttendanceLatePolicy, getTimesheetProjects, upsertTimesheetProject, getTimesheetTaskTypes, saveTimesheetTaskTypes } from '../store';
 import { useAlert } from '../AlertContext';
 import DatePicker from './DatePicker';
-import { formatYmdAsDdMmBe } from '../utils';
+import { formatYmdAsDdMmBe, formatDisplayDateTime } from '../utils';
 import { deleteExpenseType, getExpenseTypes, getHolidays as getHolidaysFromApi, isApiMode, postExpenseType, postRecalculateVacationQuotaCurrent } from '../api';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import TablePagination, { useTablePagination } from './TablePagination';
@@ -38,28 +38,12 @@ const PROTECTED_LEAVE_TYPE_IDS = new Set([
   'SICK', 'VACATION', 'PERSONAL', 'MATERNITY', 'STERILIZATION', 'PATERNITY', 'ORDINATION', 'MILITARY', 'OTHER',
 ]);
 
+/** วันที่แก้ไขล่าสุด — มาตรฐานระบบ วว/ดด/ปปปป HH:MM น. (เช่น 21/04/2569 11:25 น.) */
 function formatUpdatedAt(raw?: string): string {
   const s = String(raw ?? '').trim();
   if (!s) return '-';
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '-';
-  const parts = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Bangkok',
-  }).formatToParts(d);
-  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
-  const day = pick('day');
-  const month = pick('month');
-  const year = pick('year');
-  const hour = pick('hour');
-  const minute = pick('minute');
-  if (!day || !month || !year || !hour || !minute) return '-';
-  return `${day}/${month}/${year}, ${hour}:${minute}`;
+  const out = formatDisplayDateTime(s);
+  return out === '—' ? '-' : out;
 }
 
 function formatUpdatedByWithTime(updatedByName?: string, updatedAt?: string): string {
