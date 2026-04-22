@@ -12,10 +12,19 @@ interface ApprovalBoardProps {
   onUpdate: () => void;
 }
 
+const normalizeId = (raw: unknown): string => {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10)).padStart(3, '0');
+  return s;
+};
+
 const ApprovalBoard: React.FC<ApprovalBoardProps> = ({ requests, currentUserId, onUpdate }) => {
   const [comment, setComment] = useState('');
   const { runAction, isActionBusy } = useAsyncAction();
-  const pendingRequests = requests.filter(r => r.status === LeaveStatus.PENDING);
+  const pendingRequests = requests
+    .filter((r) => r.status === LeaveStatus.PENDING)
+    .filter((r) => normalizeId(r.userId) !== normalizeId(currentUserId));
 
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     const start = new Date(startStr);

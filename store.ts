@@ -356,12 +356,17 @@ export function normalizeUser(u: Record<string, unknown>): User {
     position,
     department,
     joinDate: String(u.joinDate ?? u.join_date ?? ''),
+    isResigned: u.isResigned === true || u.is_resigned === true,
+    resignedDate: String(u.resignedDate ?? u.resigned_date ?? ''),
     managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
     quotas: normalizeQuotaKeys(rawQuotas),
     isSuspended: u.isSuspended === true || u.is_suspended === true,
     failedLoginAttempts: u.failedLoginAttempts != null
       ? Number(u.failedLoginAttempts) || 0
       : (u.failed_login_attempts != null ? Number(u.failed_login_attempts) || 0 : 0),
+    updatedAt: u.updatedAt != null ? String(u.updatedAt) : (u.updated_at != null ? String(u.updated_at) : undefined),
+    updatedById: u.updatedById != null ? normalizeUserId(u.updatedById) : (u.updated_by != null ? normalizeUserId(u.updated_by) : undefined),
+    updatedByName: u.updatedByName != null ? String(u.updatedByName) : (u.updated_by_name != null ? String(u.updated_by_name) : undefined),
   };
 }
 /**
@@ -410,6 +415,9 @@ function normalizeLeaveType(t: Record<string, unknown>): LeaveTypeDefinition {
     defaultQuota: t.defaultQuota != null ? Number(t.defaultQuota) : (t.default_quota != null ? Number(t.default_quota) : (initial?.defaultQuota ?? 0)),
     order: t.order != null ? Number(t.order) : (initial?.order ?? 0),
     isActive: t.isActive !== false && t.is_active !== false,
+    updatedAt: t.updatedAt != null ? String(t.updatedAt) : (t.updated_at != null ? String(t.updated_at) : undefined),
+    updatedById: t.updatedById != null ? normalizeUserId(t.updatedById) : (t.updated_by != null ? normalizeUserId(t.updated_by) : undefined),
+    updatedByName: t.updatedByName != null ? String(t.updatedByName) : (t.updated_by_name != null ? String(t.updated_by_name) : undefined),
   };
 }
 function normalizeNotification(n: Record<string, unknown>): Notification {
@@ -612,7 +620,10 @@ function normalizeLeaveTypeList(list: LeaveTypeDefinition[]): LeaveTypeDefinitio
 }
 
 export const getLeaveTypes = (): LeaveTypeDefinition[] => {
-  if (isApiMode() && _leaveTypesCache) return _leaveTypesCache; // cache ผ่าน normalizeLeaveType แล้ว (uppercase)
+  // โหมด API: ใช้เฉพาะ cache จากเซิร์ฟเวอร์ (หรือชุดตั้งต้นก่อนโหลด) — ห้ามอ่าน localStorage แทน DB จะได้ไม่ merge ผิดชุด
+  if (isApiMode()) {
+    return _leaveTypesCache ?? INITIAL_LEAVE_TYPES;
+  }
   const stored = localStorage.getItem(STORAGE_KEYS.LEAVE_TYPES);
   if (!stored) {
     localStorage.setItem(STORAGE_KEYS.LEAVE_TYPES, JSON.stringify(INITIAL_LEAVE_TYPES));
@@ -629,10 +640,9 @@ export const saveLeaveTypes = (types: LeaveTypeDefinition[]): void | Promise<voi
     const deduped = normalizeLeaveTypeList(types);
     const promise = api.putLeaveTypes(deduped as unknown as Record<string, unknown>[])
       .then((res) => {
-        const list = (res as Record<string, unknown>[]).map(normalizeLeaveType);
+        const list = toArray(res).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
-      })
-      .catch(() => {});
+      });
     return promise as Promise<void>;
   }
   const deduped = normalizeLeaveTypeList(types);
@@ -647,6 +657,21 @@ export const getLeaveTypesForGender = (gender: Gender): LeaveTypeDefinition[] =>
 };
 
 export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): LeaveTypeDefinition | Promise<LeaveTypeDefinition> => {
+  if (isApiMode()) {
+    return api.getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const maxOrder = normalized.length ? Math.max(...normalized.map(t => t.order)) : 0;
+        const id = 'LT' + Date.now();
+        const newType: LeaveTypeDefinition = { ...data, id, order: maxOrder + 1 };
+        return api.putLeaveTypes([...normalized, newType] as unknown as Record<string, unknown>[]).then((raw) => {
+          const out = toArray(raw).map(normalizeLeaveType);
+          _leaveTypesCache = normalizeLeaveTypeList(out);
+          return newType;
+        });
+      });
+  }
   const types = getLeaveTypes();
   const maxOrder = types.length ? Math.max(...types.map(t => t.order)) : 0;
   const id = 'LT' + Date.now();
@@ -659,14 +684,48 @@ export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): L
 };
 
 export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>): void | Promise<void> => {
+  if (isApiMode()) {
+    const targetId = String(id || '').trim().toUpperCase();
+    return api.patchLeaveType(targetId, data as unknown as Record<string, unknown>)
+      .then(() => api.getLeaveTypes())
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
   const updated = types.map(t => t.id === id ? { ...t, ...data } : t);
   return saveLeaveTypes(updated);
 };
 
-export const deleteLeaveType = (id: string): void | Promise<void> => {
+export const setLeaveTypeActive = (id: string, active: boolean): void | Promise<void> => {
+  const targetId = String(id || '').toUpperCase();
+  if (isApiMode()) {
+    return api.patchLeaveType(targetId, { isActive: active })
+      .then(() => api.getLeaveTypes())
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
-  return saveLeaveTypes(types.map(t => t.id === id ? { ...t, isActive: false } : t));
+  return saveLeaveTypes(
+    types.map((t) => (String(t.id || '').toUpperCase() === targetId ? { ...t, isActive: active } : t))
+  );
+};
+
+export const deleteLeaveType = (id: string): void | Promise<void> => {
+  const targetId = String(id ?? '').trim();
+  if (!targetId) return;
+  if (isApiMode()) {
+    return api.deleteLeaveType(targetId).then((res) => {
+      const list = toArray(res).map(normalizeLeaveType);
+      _leaveTypesCache = normalizeLeaveTypeList(list);
+    }) as Promise<void>;
+  }
+  const types = getLeaveTypes().filter((t) => String(t.id).toUpperCase() !== targetId.toUpperCase());
+  if (types.length === getLeaveTypes().length) return;
+  return saveLeaveTypes(types);
 };
 
 export const getDefaultQuotaForLeaveType = (leaveTypeId: string): number => {
@@ -713,9 +772,11 @@ function inferGenderFromName(name: string): Gender {
 function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const u of users) {
-    const mid = u.managerId ?? '';
+    const mid = normalizeUserId(u.managerId ?? '');
+    const uid = normalizeUserId(u.id);
+    if (!uid) continue;
     if (!map.has(mid)) map.set(mid, []);
-    map.get(mid)!.push(u.id);
+    map.get(mid)!.push(uid);
   }
   return map;
 }
@@ -723,12 +784,17 @@ function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
 /** รายชื่อ id พนักงานทั้งหมดในสายงาน (รวมลูกทีมของลูกทีม) — O(n) ด้วย BFS จาก map ที่สร้างครั้งเดียว */
 export function getSubordinateIdsRecursive(managerId: string, users: User[]): string[] {
   if (users.length === 0) return [];
+  const managerIdNorm = normalizeUserId(managerId);
+  if (!managerIdNorm) return [];
   const map = buildManagerToChildrenMap(users);
   const result: string[] = [];
-  const queue: string[] = map.get(managerId) ?? [];
+  const queue: string[] = [...(map.get(managerIdNorm) ?? [])];
+  const visited = new Set<string>();
   let i = 0;
   while (i < queue.length) {
-    const id = queue[i++];
+    const id = normalizeUserId(queue[i++]);
+    if (!id || id === managerIdNorm || visited.has(id)) continue;
+    visited.add(id);
     result.push(id);
     const children = map.get(id);
     if (children) for (const c of children) queue.push(c);
@@ -811,9 +877,27 @@ export const updateUser = (updatedUser: User): void | Promise<void> => {
     setUsersCache(optimistic);
 
     const promise = api.putUser(updatedUser.id, body)
-      .then(() => api.getUsers())
-      .then((res) => {
-        setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
+      .then((savedRow) => {
+        const savedUser = normalizeUser(savedRow as Record<string, unknown>);
+        return api.getUsers()
+          .then((res) => {
+            const normalized = (res as Record<string, unknown>[]).map(normalizeUser);
+            const merged = normalized.map((u) => {
+              if (u.id !== savedUser.id) return u;
+              return {
+                ...u,
+                // Keep fresh audit fields from PUT response when list endpoint omits them.
+                updatedAt: savedUser.updatedAt ?? u.updatedAt,
+                updatedById: savedUser.updatedById ?? u.updatedById,
+                updatedByName: savedUser.updatedByName ?? u.updatedByName,
+              };
+            });
+            setUsersCache(merged);
+          })
+          .catch(() => {
+            const merged = prev.map((u) => (u.id === savedUser.id ? { ...u, ...savedUser } : u));
+            setUsersCache(merged);
+          });
       })
       .catch((err) => {
         // rollback
@@ -1033,6 +1117,9 @@ function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
     assignedUserIds: Array.from(new Set(assignedUserIds)),
     projectManagerId: managerId,
     isActive: o.isActive !== false,
+    updatedAt: o.updatedAt != null ? String(o.updatedAt) : (o.updated_at != null ? String(o.updated_at) : undefined),
+    updatedById: o.updatedById != null ? normalizeUserId(o.updatedById) : (o.updated_by != null ? normalizeUserId(o.updated_by) : undefined),
+    updatedByName: o.updatedByName != null ? String(o.updatedByName) : (o.updated_by_name != null ? String(o.updated_by_name) : undefined),
   };
 }
 

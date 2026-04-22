@@ -2,6 +2,7 @@
 import React from 'react';
 import { Notification } from '../types';
 import { markNotifAsRead } from '../store';
+import { formatDisplayDateTime } from '../utils';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface NotificationCenterProps {
@@ -49,7 +50,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
             >
               <div className="flex justify-between">
                 <h4 className="font-semibold text-sm text-gray-900">{notif.title}</h4>
-                <span className="text-[10px] text-gray-400">{new Date(notif.createdAt).toLocaleTimeString()}</span>
+                <span className="text-[10px] text-gray-400">{formatDisplayDateTime(notif.createdAt)}</span>
               </div>
               <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
             </div>

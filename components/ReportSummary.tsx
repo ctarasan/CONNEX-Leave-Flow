@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import { AttendanceRecord, LeaveRequest, User, UserRole } from '../types';
 import { HOLIDAYS_2026, FIELD_MAX_LENGTHS } from '../constants';
-import { getAllUsers, getLeaveTypes, getSubordinateIdSetRecursive, getLeaveRequests, getSubordinateIdsRecursive, loadLeaveRequestsForManager, getAttendanceRecords, loadAttendanceForUser, getLateThresholdTime } from '../store';
+import { getAllUsers, getLeaveTypes, getLeaveRequests, loadLeaveRequestsForManager, getAttendanceRecords, loadAttendanceForUser, getLateThresholdTime } from '../store';
 import { isApiMode } from '../api';
 import { formatThaiMonthYear, formatYmdAsDdMmBe, toBuddhistYear, THAI_MONTHS_FULL, currentCEYear } from '../utils';
 import TablePagination, { useTablePagination } from './TablePagination';
@@ -17,6 +17,20 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 /** แปลง Date เป็น YYYY-MM-DD ตามเวลา local (แก้ปัญหา timezone เมื่อใช้ toISOString) */
 const toLocalDateString = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const normalizeId = (raw: unknown): string => {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10)).padStart(3, '0');
+  return s;
+};
+
+const parseDateAtNoon = (raw: string): Date => {
+  const s = String(raw || '').trim();
+  if (!s) return new Date('invalid');
+  // Force local noon for date-only strings to avoid timezone boundary issues.
+  return new Date(s.includes('T') ? s : `${s}T12:00:00`);
+};
 
 const calculateBusinessDaysRange = (startStr: string, endStr: string) => {
   if (!startStr || !endStr) return 0;
@@ -38,10 +52,6 @@ const calculateBusinessDaysRange = (startStr: string, endStr: string) => {
     const isHoliday = !!HOLIDAYS_2026[isoDate];
     if (!isWeekend && !isHoliday) count++;
     curDate.setDate(curDate.getDate() + 1);
-  }
-  // ถ้า business days = 0 แต่มีช่วงวันที่ valid (เช่น ลาวันหยุด) → นับเป็น calendar days แทน
-  if (count === 0) {
-    return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   }
   return count;
 };
@@ -79,21 +89,25 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
     if (isApiMode()) {
       loadLeaveRequestsForManager(currentUser.id).then(() => {
         const allUsers = getAllUsers();
-        const subIds = new Set(getSubordinateIdsRecursive(currentUser.id, allUsers));
+        const directSubIds = new Set(
+          allUsers
+            .filter((u) => normalizeId(u.managerId) === normalizeId(currentUser.id))
+            .map((u) => normalizeId(u.id))
+        );
         const cached = getLeaveRequests();
-        const filtered = subIds.size > 0
-          ? cached.filter(r => subIds.has(r.userId))
-          : cached.filter(r => r.userId !== currentUser.id);
+        const filtered = cached.filter((r) => directSubIds.has(normalizeId(r.userId)));
         setLocalRequests(filtered);
         setAllUsers(allUsers);
       });
     } else {
       const allUsers = getAllUsers();
-      const subIds = new Set(getSubordinateIdsRecursive(currentUser.id, allUsers));
+      const directSubIds = new Set(
+        allUsers
+          .filter((u) => normalizeId(u.managerId) === normalizeId(currentUser.id))
+          .map((u) => normalizeId(u.id))
+      );
       const cached = getLeaveRequests();
-      const filtered = subIds.size > 0
-        ? cached.filter(r => subIds.has(r.userId))
-        : cached.filter(r => r.userId !== currentUser.id);
+      const filtered = cached.filter((r) => directSubIds.has(normalizeId(r.userId)));
       setLocalRequests(filtered);
       setAllUsers(allUsers);
     }
@@ -105,12 +119,10 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
     if (!currentUser) return list;
     if (currentUser.role === UserRole.ADMIN) return list;
     if (currentUser.role === UserRole.MANAGER) {
-      const subordinateSet = getSubordinateIdSetRecursive(currentUser.id, list);
-      if (subordinateSet.size > 0) return list.filter(u => subordinateSet.has(u.id));
-      // Fallback: hierarchy ไม่พบใน DB — ใช้ direct managerId match แทน
-      return list.filter(u => u.managerId === currentUser.id);
+      // ใช้เฉพาะ direct subordinates จากข้อมูล users ในระบบ
+      return list.filter((u) => normalizeId(u.managerId) === normalizeId(currentUser.id));
     }
-    return list.filter(u => u.id === currentUser.id);
+    return list.filter((u) => normalizeId(u.id) === normalizeId(currentUser.id));
   }, [allUsers, currentUser]);
 
   useEffect(() => {
@@ -139,11 +151,11 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
 
   const effectiveRequests = useMemo(() => {
     if (!currentUser || currentUser.role !== UserRole.MANAGER) return baseRequests;
-    const subordinateIds = new Set(users.map(u => u.id));
+    const subordinateIds = new Set(users.map((u) => normalizeId(u.id)));
     if (subordinateIds.size > 0) {
-      return baseRequests.filter(r => subordinateIds.has(r.userId));
+      return baseRequests.filter((r) => subordinateIds.has(normalizeId(r.userId)));
     }
-    return baseRequests;
+    return [];
   }, [baseRequests, currentUser, users]);
 
   const filteredRequests = useMemo(() => {
@@ -154,17 +166,21 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
   const [historyNameQuery, setHistoryNameQuery] = useState('');
 
   const leaveTypes = useMemo(() => getLeaveTypes().filter(t => t.isActive), [requests]);
+  const leaveTypeColorMap = useMemo(
+    () => Object.fromEntries(leaveTypes.map((lt, index) => [lt.id, COLORS[index % COLORS.length]])),
+    [leaveTypes]
+  );
 
   const stats = useMemo(() => {
     // นับตาม type ID ที่กำหนดไว้ใน leaveTypes
-    const countByType: Record<string, { name: string; count: number }> = {};
-    leaveTypes.forEach(lt => { countByType[lt.id] = { name: lt.label, count: 0 }; });
+    const countByType: Record<string, { id: string; name: string; count: number }> = {};
+    leaveTypes.forEach(lt => { countByType[lt.id] = { id: lt.id, name: lt.label, count: 0 }; });
     // นับทุกรายการ — ถ้า type ไม่ตรงกับ leaveTypes ก็ใช้ type ID เป็น label (ป้องกัน chart ว่างเปล่า)
     filteredRequests.forEach(r => {
       if (countByType[r.type]) {
         countByType[r.type].count++;
       } else {
-        countByType[r.type] = { name: r.type, count: (countByType[r.type]?.count ?? 0) + 1 };
+        countByType[r.type] = { id: r.type, name: r.type, count: (countByType[r.type]?.count ?? 0) + 1 };
       }
     });
     return Object.values(countByType).filter(s => s.count > 0);
@@ -188,8 +204,9 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
 
     const list = filteredRequests.filter((req) => {
       if (nameQuery && !req.userName.toLowerCase().includes(nameQuery)) return false;
-      const start = new Date(req.startDate);
-      const end = new Date(req.endDate);
+      const start = parseDateAtNoon(req.startDate);
+      const end = parseDateAtNoon(req.endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
 
       if (reportScope === 'year') {
         return start.getFullYear() <= reportYear && end.getFullYear() >= reportYear;
@@ -198,8 +215,8 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
       const year = parseInt(yStr, 10);
       const month = parseInt(mStr, 10);
       if (!year || !month) return false;
-      const firstOfMonth = new Date(year, month - 1, 1);
-      const lastOfMonth = new Date(year, month, 0);
+      const firstOfMonth = new Date(year, month - 1, 1, 12, 0, 0, 0);
+      const lastOfMonth = new Date(year, month, 0, 12, 0, 0, 0);
       return start <= lastOfMonth && end >= firstOfMonth;
     });
     return [...list].sort((a, b) => b.startDate.localeCompare(a.startDate));
@@ -213,7 +230,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
   };
 
   const pivotData = useMemo(() => {
-    const userById = new Map(users.map((u) => [u.id, u]));
+    const userById: Map<string, User> = new Map(users.map((u: User) => [u.id, u]));
     const lateThreshold = getLateThresholdTime();
     const map: Record<string, { userId: string; userName: string; byType: Record<string, number> }> = {};
 
@@ -233,15 +250,16 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
     filteredRequests.forEach((req) => {
       // ตาราง Pivot แสดงเฉพาะพนักงานใต้สายบังคับบัญชา — ไม่แสดง Manager เอง
       if (currentUser && req.userId === currentUser.id) return;
-      const start = new Date(req.startDate);
-      const end = new Date(req.endDate);
+      const start = parseDateAtNoon(req.startDate);
+      const end = parseDateAtNoon(req.endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
       // กรองตาม reportScope (ปีหรือเดือน)
       if (reportScope === 'year') {
         if (start.getFullYear() > reportYear || end.getFullYear() < reportYear) return;
       } else {
         if (!pivotYear || !pivotMonth) return;
-        const firstOfMonth = new Date(pivotYear, pivotMonth - 1, 1);
-        const lastOfMonth = new Date(pivotYear, pivotMonth, 0);
+        const firstOfMonth = new Date(pivotYear, pivotMonth - 1, 1, 12, 0, 0, 0);
+        const lastOfMonth = new Date(pivotYear, pivotMonth, 0, 12, 0, 0, 0);
         if (start > lastOfMonth || end < firstOfMonth) return;
       }
       ensureRow(req.userId, req.userName);
@@ -407,7 +425,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                   <p className="text-gray-400 font-bold italic text-sm">ไม่พบข้อมูลวันลาในช่วงที่เลือก</p>
                 </div>
               ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={260}>
                 <BarChart
                   data={pivotData.slice(0, 5).map((row) => ({
                     userName: row.userName,
@@ -434,7 +452,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                       dataKey={lt.id}
                       name={lt.label}
                       stackId="leave"
-                      fill={COLORS[index % COLORS.length]}
+                      fill={leaveTypeColorMap[lt.id] || COLORS[index % COLORS.length]}
                       radius={[0, 4, 4, 0]}
                     />
                   ))}
@@ -446,7 +464,7 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
 
             <div className="h-[350px] w-full">
               <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 text-center">สถิติการลาแยกตามประเภท (จำนวนครั้ง)</p>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={260}>
                 <BarChart data={stats}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
@@ -456,8 +474,8 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ requests, currentUser }) 
                     contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                   />
                   <Bar dataKey="count" radius={[10, 10, 0, 0]}>
-                    {stats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {stats.map((entry) => (
+                      <Cell key={`cell-${entry.id}`} fill={leaveTypeColorMap[entry.id] || COLORS[0]} />
                     ))}
                   </Bar>
                 </BarChart>

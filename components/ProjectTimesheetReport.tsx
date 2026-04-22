@@ -207,8 +207,8 @@ const ProjectTimesheetReport: React.FC<ProjectTimesheetReportProps> = ({ current
             {performanceProjectId === 'ALL' && (
               <p className="text-sm font-black text-gray-700 mb-2">{chart.projectName}</p>
             )}
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-72 min-h-[18rem]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={260}>
                 <BarChart data={chart.data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="task" />

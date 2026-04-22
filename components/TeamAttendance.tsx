@@ -12,6 +12,22 @@ interface TeamAttendanceProps {
   manager: User;
 }
 
+/** แสดงระยะเวลาระหว่างเวลาเข้า–ออก เป็น "X ชั่วโมง Y นาที" (ไม่ใช่ทศนิยมชั่วโมง) */
+const formatWorkDurationThai = (dateStr: string, checkIn?: string | null, checkOut?: string | null): string => {
+  if (!checkIn || !checkOut) return '-';
+  const start = new Date(`${dateStr}T${checkIn}`);
+  const end = new Date(`${dateStr}T${checkOut}`);
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return '-';
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0 && m === 0) return '-';
+  if (h === 0) return `${m} นาที`;
+  if (m === 0) return `${h} ชั่วโมง`;
+  return `${h} ชั่วโมง ${m} นาที`;
+};
+
 const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
   const today = useMemo(() => new Date(), []);
   const monthStart = useMemo(() => {
@@ -159,15 +175,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {attendancePagination.pagedItems.map((rec) => {
-              let hoursText = '-';
-              if (rec.checkIn && rec.checkOut) {
-                const start = new Date(`${rec.date}T${rec.checkIn}`);
-                const end = new Date(`${rec.date}T${rec.checkOut}`);
-                const diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-                if (diff > 0) {
-                  hoursText = diff.toFixed(2);
-                }
-              }
+              const hoursText = formatWorkDurationThai(rec.date, rec.checkIn, rec.checkOut);
 
               return (
                 <tr key={rec.id} className="hover:bg-gray-50 transition">
@@ -231,6 +239,8 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
           rangeEnd={attendancePagination.rangeEnd}
           onPageChange={attendancePagination.setPage}
           onPageSizeChange={attendancePagination.setPageSize}
+          leftOffsetPx={38}
+          rightOffsetPx={-38}
         />
         {isLoading && (
           <div className="px-6 py-4 text-center text-gray-500 text-xs font-bold">

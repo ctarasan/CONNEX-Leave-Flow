@@ -1,19 +1,7 @@
--- Recalculate vacation_quota to match API / server logic (Asia/Bangkok calendar year).
--- Safe to run in Supabase SQL Editor.
---
--- Rules (same as server/src/routes/users.ts):
--- 1) start_date = join_date (minus 543 years if year >= 2400)
--- 2) anniversary_date = start_date + 1 year
--- 3) If anniversary after Dec 31 current year -> 0
---    If anniversary before Jan 1 current year -> 12
---    If today < anniversary -> 0 (ยังไม่ครบปีแรก)
--- 4) Else: (12 - month(anniversary) + 1) minus join-day adjustment:
---    join day 1-15: 0 / 16-25: 0.5 / >25: 1
--- 5) Cap 0..12
---
--- This replaces the old payroll-cutoff accrual script; keep in sync with the app.
-
-BEGIN;
+-- Recompute vacation_quota for all users using the same rules as the API:
+-- earned = (12 - month(anniversary) + 1) - join-day adjustment
+-- join day 1-15: 0 / 16-25: 0.5 / >25: 1
+-- Does not modify updated_by (one-time data fix).
 
 UPDATE users u
 SET vacation_quota = e.earned_entitlement_today
@@ -76,5 +64,3 @@ FROM (
   SELECT id, earned_entitlement_today FROM ent
 ) e
 WHERE u.id = e.id;
-
-COMMIT;

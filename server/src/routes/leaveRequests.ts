@@ -3,6 +3,12 @@ import { pool } from '../db.js';
 import { rowToCamel } from '../util.js';
 
 const router = Router();
+const normalizeId = (raw: unknown): string => {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10)).padStart(3, '0');
+  return s;
+};
 
 /** GET /api/leave-requests - ดึงคำขอลา (เลือกได้ตาม userId) */
 router.get('/', async (req, res) => {
@@ -79,6 +85,10 @@ router.patch('/:id/status', async (req, res) => {
     const requestUserId = (reqRow.rows[0] as { user_id: string } | undefined)?.user_id;
     if (!requestUserId) {
       return res.status(404).json({ error: 'ไม่พบคำขอลา' });
+    }
+    // Business rule: requester cannot approve/reject their own leave.
+    if (normalizeId(requestUserId) === normalizeId(managerIdToUse)) {
+      return res.status(403).json({ error: 'พนักงานไม่สามารถอนุมัติหรือปฏิเสธใบลาของตนเองได้' });
     }
     const subordinateRow = await pool.query('SELECT manager_id FROM users WHERE id = $1', [requestUserId]);
     const subordinateManagerId = (subordinateRow.rows[0] as { manager_id: string | null } | undefined)?.manager_id;

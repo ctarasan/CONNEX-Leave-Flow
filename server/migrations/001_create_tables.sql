@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
   gender VARCHAR(10) NOT NULL CHECK (gender IN ('male', 'female')),
   department VARCHAR(255),
   join_date DATE NOT NULL,
+  is_resigned BOOLEAN NOT NULL DEFAULT FALSE,
+  resigned_date DATE,
   manager_id VARCHAR(10),
   
   -- Leave quotas

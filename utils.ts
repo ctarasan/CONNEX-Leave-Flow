@@ -105,6 +105,40 @@ export const formatBangkokDdMmBeTime = (isoStr: string | Date | null | undefined
 };
 
 /**
+ * มาตรฐานการแสดง "วันที่" ในระบบ: **วว/ดด/ปปปป (ปี พ.ศ.)** เช่น `21/04/2569`
+ * - ค่าแบบ `YYYY-MM-DD` เท่านั้น → ใช้ `formatYmdAsDdMmBe` (ไม่เลื่อนวันเพราะ timezone)
+ * - ค่าแบบ ISO datetime → ใช้ `formatBangkokDateAsDdMmBe` (อิงเวลาไทย UTC+7)
+ */
+export const formatDisplayDate = (value: string | Date | null | undefined): string => {
+  if (value == null || value === '') return '—';
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '—';
+    return formatBangkokDateAsDdMmBe(value);
+  }
+  const s = String(value).trim();
+  if (!s) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatYmdAsDdMmBe(s);
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s) || /Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    return formatBangkokDateAsDdMmBe(s);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return formatBangkokDateAsDdMmBe(d);
+  }
+  return formatYmdAsDdMmBe(s);
+};
+
+/**
+ * มาตรฐานการแสดงวันที่+เวลา: **วว/ดด/ปปปป HH:MM น.** (ปี พ.ศ., เวลาไทย)
+ */
+export const formatDisplayDateTime = (value: string | Date | null | undefined): string => {
+  if (value == null || value === '') return '—';
+  return formatBangkokDdMmBeTime(value);
+};
+
+/**
  * แปลง datetime เป็น "D ม.ค. พ.ศ., HH:MM น." (เวลาไทย UTC+7).
  * ค่าใน DB เป็น UTC (ช้ากว่าไทย 7 ชม.) — ฟังก์ชันจะถือว่าค่าที่ได้เป็น UTC แล้วบวก 7 ชม. เพื่อแสดงเวลาไทย
  */

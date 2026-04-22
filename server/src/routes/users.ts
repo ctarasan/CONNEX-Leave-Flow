@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { pool } from '../db.js';
-import { rowToCamel } from '../util.js';
+import { normalizeUserId, rowToCamel } from '../util.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -18,18 +18,156 @@ const quotaOut = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
+
+/** สูตรเดียวกับ POST /recalculate-vacation-quota-current — หักตามวันเริ่มงาน (1–15: 0 / 16–25: 0.5 / >25: 1) */
+const VACATION_QUOTA_RECALC_SQL = `
+      WITH ctx AS (
+        SELECT
+          (now() AT TIME ZONE 'Asia/Bangkok')::date AS today_bkk,
+          EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int AS curr_year
+      ),
+      base AS (
+        SELECT
+          u.id,
+          CASE
+            WHEN EXTRACT(YEAR FROM u.join_date::date)::int >= 2400
+              THEN (u.join_date::date - INTERVAL '543 years')::date
+            ELSE u.join_date::date
+          END AS start_date,
+          make_date(c.curr_year, 1, 1) AS year_start,
+          make_date(c.curr_year, 12, 31) AS year_end,
+          c.today_bkk
+        FROM users u
+        CROSS JOIN ctx c
+        WHERE u.join_date IS NOT NULL
+          AND ($2::text IS NULL OR u.id = $2)
+      ),
+      calc AS (
+        SELECT
+          b.id,
+          b.start_date,
+          (b.start_date + INTERVAL '1 year')::date AS anniversary_date,
+          b.year_start,
+          b.year_end,
+          b.today_bkk
+        FROM base b
+      ),
+      ent AS (
+        SELECT
+          c.id,
+          c.anniversary_date,
+          CASE
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
+              )
+            )
+          END::numeric(10,2) AS full_year_entitlement,
+          CASE
+            WHEN c.anniversary_date > c.year_end THEN 0.00
+            WHEN c.anniversary_date < c.year_start THEN 12.00
+            WHEN c.today_bkk < c.anniversary_date THEN 0.00
+            ELSE GREATEST(
+              0.00,
+              LEAST(
+                12.00,
+                (
+                  (12 - EXTRACT(MONTH FROM c.anniversary_date)::int + 1)::numeric
+                  -
+                  CASE
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 1 AND 15 THEN 0.00
+                    WHEN EXTRACT(DAY FROM c.start_date)::int BETWEEN 16 AND 25 THEN 0.50
+                    ELSE 1.00
+                  END
+                )
+              )
+            )
+          END::numeric(10,2) AS earned_entitlement_today,
+          c.today_bkk
+        FROM calc c
+      ),
+      updated AS (
+        UPDATE users u
+        SET vacation_quota = e.earned_entitlement_today,
+            updated_by = $1
+        FROM ent e
+        WHERE u.id = e.id
+        RETURNING
+          u.id,
+          u.name,
+          u.join_date AS "joinDate",
+          e.full_year_entitlement AS "fullYearEntitlement",
+          e.earned_entitlement_today AS "earnedEntitlementToday",
+          u.vacation_quota AS "vacationQuota"
+      )
+      SELECT * FROM updated ORDER BY id
+      `;
+
+async function runVacationQuotaRecalc(updatedBy: string | null, targetUserId: string | null) {
+  return pool.query(VACATION_QUOTA_RECALC_SQL, [normalizeUserId(updatedBy), targetUserId]);
+}
+
+let userProfileAuditColumnsEnsured = false;
+async function ensureUserProfileAuditColumns(): Promise<void> {
+  if (userProfileAuditColumnsEnsured) return;
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_by TEXT`);
+  await pool.query(`
+    UPDATE users
+    SET profile_updated_at = COALESCE(profile_updated_at, updated_at),
+        profile_updated_by = COALESCE(NULLIF(TRIM(profile_updated_by), ''), NULLIF(TRIM(COALESCE(updated_by::text, '')), ''))
+    WHERE profile_updated_at IS NULL
+       OR profile_updated_by IS NULL
+       OR TRIM(COALESCE(profile_updated_by, '')) = ''
+  `);
+  userProfileAuditColumnsEnsured = true;
+}
 
 router.get('/', requireAuth, async (_req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
+    const includeResignedRaw = String((_req.query?.includeResigned ?? '')).trim().toLowerCase();
+    const includeResigned = includeResignedRaw === '1' || includeResignedRaw === 'true' || includeResignedRaw === 'yes';
     let rows: Record<string, unknown>[];
     try {
       const r = await pool.query(
-        `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
-          sick_quota, personal_quota, vacation_quota, ordination_quota,
-          military_quota, maternity_quota, sterilization_quota, paternity_quota,
-          COALESCE(is_suspended, FALSE) as "isSuspended",
-          COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
-        FROM users ORDER BY id`
+        `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
+          u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota,
+          u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+          COALESCE(u.is_resigned, FALSE) as "isResigned",
+          COALESCE(u.resigned_date::text, '') as "resignedDate",
+          COALESCE(u.profile_updated_at, u.updated_at) as "updatedAt",
+          COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), '')) as "updatedById",
+          COALESCE(editor.name, '') as "updatedByName",
+          COALESCE(u.is_suspended, FALSE) as "isSuspended",
+          COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
+        FROM users u
+        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql(`COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), ''))`)}
+        WHERE ($1::boolean = TRUE OR COALESCE(u.is_resigned, FALSE) = FALSE)
+        ORDER BY u.id`
+      , [includeResigned]
       );
       rows = r.rows as Record<string, unknown>[];
     } catch (qErr) {
@@ -58,6 +196,11 @@ router.get('/', requireAuth, async (_req, res) => {
               ELSE ''
             END as position,
             department, join_date as "joinDate", manager_id as "managerId",
+            FALSE as "isResigned",
+            ''::text as "resignedDate",
+            updated_at as "updatedAt",
+            ''::text as "updatedById",
+            ''::text as "updatedByName",
             COALESCE(is_suspended, FALSE) as "isSuspended",
             COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
            FROM users ORDER BY id`
@@ -70,6 +213,8 @@ router.get('/', requireAuth, async (_req, res) => {
     // ถ้ายังไม่ได้รัน migration 006 (คอลัมน์ security ยังไม่มี) ให้ตั้งค่า default เพื่อไม่ให้ frontend พัง
     rows = rows.map((r) => ({
       ...r,
+      isResigned: (r as Record<string, unknown>).isResigned ?? false,
+      resignedDate: (r as Record<string, unknown>).resignedDate ?? '',
       isSuspended: (r as Record<string, unknown>).isSuspended ?? false,
       failedLoginAttempts: (r as Record<string, unknown>).failedLoginAttempts ?? 0,
     }));
@@ -102,8 +247,13 @@ router.get('/', requireAuth, async (_req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
     if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
-    const { id, name, email, password, role = 'EMPLOYEE', gender, position = '', department = '', joinDate, managerId, quotas } = req.body;
+    const { id, name, email, password, role = 'EMPLOYEE', gender, position = '', department = '', joinDate, managerId, quotas, isResigned, resignedDate } = req.body;
     if (!name || !email || !password || !gender || !joinDate) {
       return res.status(400).json({ error: 'ต้องมี name, email, password, gender, joinDate' });
     }
@@ -120,32 +270,42 @@ router.post('/', requireAuth, async (req, res) => {
     const sterilizationQuota = getQuotaValue(quotas, 'sterilization');
     const paternityQuota = getQuotaValue(quotas, 'paternity');
     
-    await pool.query(
+    const ins = await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
-        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, is_resigned, resigned_date, updated_by, profile_updated_by, profile_updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
        ON CONFLICT (id) DO NOTHING`,
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
-       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota]
+       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, isResigned === true, (isResigned === true && resignedDate) ? resignedDate : null, normalizeUserId(req.user?.id) || null, normalizeUserId(req.user?.id) || null]
     );
-    res.status(201).json({ id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null });
+    if ((ins.rowCount ?? 0) > 0) {
+      await runVacationQuotaRecalc(normalizeUserId(req.user?.id) || null, normalizeUserId(uid));
+    }
+    res.status(201).json({
+      id: uid, name, email, role, gender, position: position || department, department, joinDate, managerId: managerId || null,
+      isResigned: isResigned === true,
+      resignedDate: (isResigned === true && resignedDate) ? resignedDate : '',
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message.includes('is_resigned') || message.includes('resigned_date')) {
+      return res.status(400).json({ error: 'ยังไม่ได้รัน migration สำหรับสถานะลาออก (server/migrations/016_user_resignation_status.sql)' });
+    }
     res.status(500).json({ error: message });
   }
 });
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
     const id = req.params.id;
-    const bodyKeys = Object.keys(req.body || {});
-    const passwordInBody = 'password' in (req.body || {});
-    // #region agent log
-    fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'users.ts:PUT', message: 'PUT user body', data: { id, bodyKeys, passwordInBody }, timestamp: Date.now(), hypothesisId: 'H1,H4' }) }).catch(() => {});
-    // #endregion
-    const { name, email, role, gender, position, department, joinDate, managerId, quotas, password, isSuspended } = req.body;
+    const { name, email, role, gender, position, department, joinDate, managerId, quotas, password, isSuspended, isResigned, resignedDate } = req.body;
     if (!id) return res.status(400).json({ error: 'ต้องมี id' });
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -163,6 +323,16 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (department !== undefined) { updates.push(`department = $${i++}`); values.push(department); }
     if (joinDate !== undefined) { updates.push(`join_date = $${i++}`); values.push(joinDate); }
     if (managerId !== undefined) { updates.push(`manager_id = $${i++}`); values.push(managerId || null); }
+    if (isResigned !== undefined) {
+      const resigned = isResigned === true;
+      updates.push(`is_resigned = $${i++}`);
+      values.push(resigned);
+      updates.push(`resigned_date = $${i++}`);
+      values.push(resigned ? (resignedDate || null) : null);
+    } else if (resignedDate !== undefined) {
+      updates.push(`resigned_date = $${i++}`);
+      values.push(resignedDate || null);
+    }
     if (quotas !== undefined && typeof quotas === 'object') {
       const qObj = quotas as Record<string, unknown>;
       if (qObj.sick !== undefined || qObj.SICK !== undefined) { updates.push(`sick_quota = $${i++}`); values.push(getQuotaValue(quotas, 'sick')); }
@@ -186,9 +356,14 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
     if (updates.length === 0) return res.status(400).json({ error: 'ไม่มีฟิลด์ที่อัปเดต' });
+    updates.push(`updated_by = $${i++}`);
+    values.push(normalizeUserId(req.user.id));
+    updates.push(`profile_updated_by = $${i++}`);
+    values.push(normalizeUserId(req.user.id));
     values.push(id);
     try {
-      await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}`, values);
+      await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW(), profile_updated_at = NOW() WHERE id = $${i}`, values);
+      await runVacationQuotaRecalc(normalizeUserId(req.user.id), normalizeUserId(id));
     } catch (uErr) {
       const msg = uErr instanceof Error ? uErr.message : '';
       if (msg.includes('position')) {
@@ -200,15 +375,25 @@ router.put('/:id', requireAuth, async (req, res) => {
       if (msg.includes('invalid input syntax for type integer')) {
         return res.status(400).json({ error: 'ฐานข้อมูลยังไม่รองรับโควต้าแบบทศนิยม กรุณารัน migration: server/migrations/012_quota_decimal.sql' });
       }
+      if (msg.includes('is_resigned') || msg.includes('resigned_date')) {
+        return res.status(400).json({ error: 'ยังไม่ได้รัน migration สำหรับสถานะลาออก (server/migrations/016_user_resignation_status.sql)' });
+      }
       throw uErr;
     }
     const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
-        sick_quota, personal_quota, vacation_quota, ordination_quota, 
-        military_quota, maternity_quota, sterilization_quota, paternity_quota,
-        COALESCE(is_suspended, FALSE) as "isSuspended",
-        COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
-      FROM users WHERE id = $1`, 
+      `SELECT u.id, u.name, u.email, u.role, u.gender, u.position, u.department, u.join_date as "joinDate", u.manager_id as "managerId",
+        u.sick_quota, u.personal_quota, u.vacation_quota, u.ordination_quota, 
+        u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
+        COALESCE(u.is_resigned, FALSE) as "isResigned",
+        COALESCE(u.resigned_date::text, '') as "resignedDate",
+        COALESCE(u.profile_updated_at, u.updated_at) as "updatedAt",
+        COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), '')) as "updatedById",
+        COALESCE(editor.name, '') as "updatedByName",
+        COALESCE(u.is_suspended, FALSE) as "isSuspended",
+        COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
+      FROM users u
+      LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql(`COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), ''))`)}
+      WHERE u.id = $1`, 
       [id]
     );
     if (rows[0]) {
@@ -241,86 +426,10 @@ router.post('/recalculate-vacation-quota-current', requireAuth, async (req, res)
   try {
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
+    const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
+    const targetUserId = normalizeUserId(body.userId) || null;
 
-    const { rows } = await pool.query(
-      `
-      WITH ctx AS (
-        SELECT
-          (now() AT TIME ZONE 'Asia/Bangkok')::date AS today_bkk,
-          EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Bangkok'))::int AS curr_year
-      ),
-      base AS (
-        SELECT
-          u.id,
-          u.join_date::date AS start_date,
-          (u.join_date::date + INTERVAL '1 year')::date AS anniversary_date,
-          make_date(c.curr_year, 1, 1) AS year_start,
-          make_date(c.curr_year, 12, 31) AS year_end,
-          CASE
-            WHEN EXTRACT(DAY FROM c.today_bkk)::int > 25 THEN EXTRACT(MONTH FROM c.today_bkk)::int
-            ELSE EXTRACT(MONTH FROM c.today_bkk)::int - 1
-          END AS closed_month
-        FROM users u
-        CROSS JOIN ctx c
-        WHERE u.join_date IS NOT NULL
-      ),
-      calc AS (
-        SELECT
-          b.id,
-          CASE
-            WHEN b.anniversary_date > b.year_end THEN 0.00
-            WHEN b.anniversary_date < b.year_start THEN 12.00
-            ELSE LEAST(
-              12.00,
-              (
-                CASE
-                  WHEN EXTRACT(MONTH FROM b.anniversary_date)::int <= GREATEST(0, b.closed_month)
-                   AND EXTRACT(DAY FROM b.anniversary_date)::int <= 25
-                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
-                  ELSE 0.00
-                END
-                +
-                GREATEST(
-                  0,
-                  GREATEST(0, b.closed_month) - EXTRACT(MONTH FROM b.anniversary_date)::int
-                )::numeric
-              )
-            )
-          END::numeric(10,2) AS earned_entitlement_today,
-          CASE
-            WHEN b.anniversary_date > b.year_end THEN 0.00
-            WHEN b.anniversary_date < b.year_start THEN 12.00
-            ELSE LEAST(
-              12.00,
-              (
-                CASE
-                  WHEN EXTRACT(DAY FROM b.anniversary_date)::int <= 25
-                  THEN CASE WHEN EXTRACT(DAY FROM b.start_date)::int <= 15 THEN 1.00 ELSE 0.50 END
-                  ELSE 0.00
-                END
-                +
-                GREATEST(0, 12 - EXTRACT(MONTH FROM b.anniversary_date)::int)::numeric
-              )
-            )
-          END::numeric(10,2) AS full_year_entitlement
-        FROM base b
-      ),
-      updated AS (
-        UPDATE users u
-        SET vacation_quota = c.earned_entitlement_today
-        FROM calc c
-        WHERE u.id = c.id
-        RETURNING
-          u.id,
-          u.name,
-          u.join_date AS "joinDate",
-          c.full_year_entitlement AS "fullYearEntitlement",
-          c.earned_entitlement_today AS "earnedEntitlementToday",
-          u.vacation_quota AS "vacationQuota"
-      )
-      SELECT * FROM updated ORDER BY id
-      `
-    );
+    const { rows } = await runVacationQuotaRecalc(normalizeUserId(req.user.id), targetUserId);
 
     res.json({
       updatedCount: rows.length,

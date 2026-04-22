@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { normalizeUserId as normalizeActorId } from '../util.js';
 
 const router = Router();
+const normIdSql = (col: string): string =>
+  `(CASE
+     WHEN TRIM(COALESCE((${col})::text, '')) ~ '^[0-9]+$'
+       THEN LPAD(((TRIM(((${col})::text)))::int)::text, 3, '0')
+     ELSE TRIM(COALESCE((${col})::text, ''))
+   END)`;
 
 function normalizeUserId(raw: unknown): string {
   if (raw == null) return '';
@@ -79,15 +86,19 @@ router.get('/projects', async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT
-         id,
-         code,
-         name,
+         p.id,
+         p.code,
+         p.name,
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
-         is_active AS "isActive"
-       FROM timesheet_projects
-       ORDER BY code ASC, id ASC`
+         is_active AS "isActive",
+         p.updated_at AS "updatedAt",
+         p.updated_by AS "updatedById",
+         COALESCE(editor.name, '') AS "updatedByName"
+       FROM timesheet_projects p
+       LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
+       ORDER BY p.code ASC, p.id ASC`
     );
     res.json(rows);
   } catch (err) {
@@ -115,29 +126,35 @@ router.post('/projects', requireAuth, async (req, res) => {
 
     await pool.query(
       `INSERT INTO timesheet_projects
-        (id, code, name, project_manager_id, assigned_user_ids, task_target_days, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        (id, code, name, project_manager_id, assigned_user_ids, task_target_days, is_active, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
        ON CONFLICT (id) DO UPDATE SET
          code = EXCLUDED.code,
          name = EXCLUDED.name,
          project_manager_id = EXCLUDED.project_manager_id,
          assigned_user_ids = EXCLUDED.assigned_user_ids,
          task_target_days = EXCLUDED.task_target_days,
-         is_active = EXCLUDED.is_active`,
-      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive]
+         is_active = EXCLUDED.is_active,
+         updated_at = NOW(),
+         updated_by = EXCLUDED.updated_by`,
+      [id, code, name, projectManagerId, assignedUserIds, JSON.stringify(taskTargetDays), isActive, normalizeActorId(req.user?.id) || null]
     );
 
     const { rows } = await pool.query(
       `SELECT
-         id,
-         code,
-         name,
+         p.id,
+         p.code,
+         p.name,
          project_manager_id AS "projectManagerId",
          assigned_user_ids AS "assignedUserIds",
          task_target_days AS "taskTargetDays",
-         is_active AS "isActive"
-       FROM timesheet_projects
-       WHERE id = $1`,
+         is_active AS "isActive",
+         p.updated_at AS "updatedAt",
+         p.updated_by AS "updatedById",
+         COALESCE(editor.name, '') AS "updatedByName"
+       FROM timesheet_projects p
+       LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('p.updated_by')}
+       WHERE p.id = $1`,
       [id]
     );
     res.status(201).json(rows[0] ?? null);

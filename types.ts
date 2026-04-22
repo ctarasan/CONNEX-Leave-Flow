@@ -23,6 +23,9 @@ export interface LeaveTypeDefinition {
   defaultQuota: number;
   order: number;
   isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface User {
@@ -35,6 +38,10 @@ export interface User {
   position: string;
   department: string;
   joinDate: string; // ISO string (YYYY-MM-DD)
+  /** สถานะพนักงานลาออก */
+  isResigned?: boolean;
+  /** วันที่ลาออก (YYYY-MM-DD) เมื่อ isResigned = true */
+  resignedDate?: string;
   managerId?: string;
   /** โควต้าตามประเภทวันลา (key = leaveTypeId) — ตั้งค่าจากประเภทวันลา ไม่แก้ที่หน้าพนักงาน */
   quotas: Record<string, number>;
@@ -42,6 +49,9 @@ export interface User {
   isSuspended?: boolean;
   /** จำนวนครั้งที่ใส่รหัสผ่านผิดสะสม (ใช้สำหรับ policy suspend) */
   failedLoginAttempts?: number;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface LeaveRequest {
@@ -110,6 +120,9 @@ export interface TimesheetProject {
   assignedUserIds: string[];
   projectManagerId: string;
   isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface TimesheetEntry {
@@ -130,6 +143,8 @@ export interface ExpenseTypeDefinition {
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
+  updatedById?: string;
+  updatedByName?: string;
 }
 
 export interface ExpenseClaimItem {

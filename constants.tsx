@@ -1,10 +1,18 @@
 import { LeaveStatus } from './types';
+import { formatDisplayDateTime } from './utils';
+
+/** ค่าแทรกจาก Vite ตอน build / ตอนรัน dev (ดู vite.config.ts) */
+declare const __APP_BUILD_ISO__: string | undefined;
 
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
 export const APP_VERSION = '4.0.4';
 
-/** วันที่และเวลาที่ปรับแก้ล่าสุด (อัปเดตทุกครั้งที่ release) */
-export const APP_LAST_UPDATED = '22 เม.ย. 2569, 16:35 น.';
+/** วันที่และเวลาที่ build/รัน dev ล่าสุด — รูปแบบ วว/ดด/ปปปป HH:MM น. (เช่น 21/04/2569 14:30 น.) */
+const buildIso =
+  typeof __APP_BUILD_ISO__ === 'string' && __APP_BUILD_ISO__.trim() !== ''
+    ? __APP_BUILD_ISO__.trim()
+    : new Date().toISOString();
+export const APP_LAST_UPDATED = formatDisplayDateTime(buildIso);
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
 const ENV_LABEL = String(import.meta.env.VITE_ENV_LABEL ?? '').trim();
@@ -41,7 +49,7 @@ export const FIELD_MAX_LENGTHS = {
   taskLabel: 50,
   leaveTypeLabel: 50,
   expenseTypeLabel: 50,
-  holidayName: 50,
+  holidayName: 200,
   leaveReason: 200,
   approvalComment: 200,
   searchText: 60,

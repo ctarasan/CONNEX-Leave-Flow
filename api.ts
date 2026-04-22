@@ -4,16 +4,28 @@
  */
 
 const PROD_BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
-const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
-  ? String(import.meta.env.VITE_PREVIEW_API_URL).trim().replace(/\/$/, '')
-  : '';
+/** สำรองเมื่อยังไม่ตั้ง VITE_PREVIEW_API_URL บน Vercel — อัปเดตให้ตรง deployment Preview ล่าสุดของ connex-leave-flow-doak เวลาปล่อยคู่กับ frontend */
+const DEFAULT_CONNEX_PREVIEW_BACKEND = 'https://connex-leave-flow-doak-pk6q925h2-ctarasans-projects.vercel.app';
 const VERCEL_ENV = typeof import.meta !== 'undefined' && import.meta.env?.VERCEL_ENV
   ? String(import.meta.env.VERCEL_ENV).trim().toLowerCase()
   : '';
 
+function normalizeApiBaseCandidate(raw: unknown): string {
+  return String(raw ?? '')
+    .trim()
+    // Defensive cleanup: some env values can accidentally contain escaped newline markers.
+    .replace(/\\r|\\n/g, '')
+    .replace(/\r|\n/g, '')
+    .replace(/\/$/, '');
+}
+
+const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
+  ? normalizeApiBaseCandidate(import.meta.env.VITE_PREVIEW_API_URL)
+  : '';
+
 function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-    ? String(import.meta.env.VITE_API_URL).trim().replace(/\/$/, '')
+    ? normalizeApiBaseCandidate(import.meta.env.VITE_API_URL)
     : '';
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const host = window.location.hostname;
@@ -22,7 +34,9 @@ function getEffectiveApiBase(): string {
     const isConnexFrontendHost = /^connex-leave-flow(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host);
     if (isConnexFrontendHost && (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app'))) {
       // For Preview deployments, point to preview backend only (do not fall back to production backend).
-      if (VERCEL_ENV === 'preview') return PREVIEW_BACKEND_URL;
+      if (VERCEL_ENV === 'preview') {
+        return PREVIEW_BACKEND_URL || DEFAULT_CONNEX_PREVIEW_BACKEND;
+      }
       return PROD_BACKEND_URL;
     }
   }
@@ -132,8 +146,9 @@ export async function getBackendStatus(): Promise<{ server: boolean; database: b
   return { server: !!data?.server, database: !!data?.database, message: data?.message };
 }
 
-export async function getUsers(): Promise<Record<string, unknown>[]> {
-  const res = await fetchWithAuth(`${API_BASE}/api/users`);
+export async function getUsers(includeResigned = true): Promise<Record<string, unknown>[]> {
+  const q = includeResigned ? '?includeResigned=true' : '?includeResigned=false';
+  const res = await fetchWithAuth(`${API_BASE}/api/users${q}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     throw new Error(getErrorMessage(res, data) || 'โหลดผู้ใช้ไม่สำเร็จ');
@@ -390,9 +405,11 @@ export async function deleteUser(id: string): Promise<void> {
   }
 }
 
-export async function postRecalculateVacationQuotaCurrent(): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+export async function postRecalculateVacationQuotaCurrent(userId?: string): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+  const body = userId ? { userId } : undefined;
   const res = await fetchWithAuth(`${API_BASE}/api/users/recalculate-vacation-quota-current`, {
     method: 'POST',
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
@@ -413,6 +430,27 @@ export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<R
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function patchLeaveType(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/leave-types/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function deleteLeaveType(id: string): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/leave-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ลบประเภทวันลาไม่สำเร็จ');
   }
   return res.json();
 }
