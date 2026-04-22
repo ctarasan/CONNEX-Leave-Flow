@@ -1,35 +1,30 @@
 import { LeaveStatus } from './types';
+import { formatDisplayDateTime } from './utils';
+
+/** ค่าแทรกจาก Vite ตอน build / ตอนรัน dev (ดู vite.config.ts) */
+declare const __APP_BUILD_ISO__: string | undefined;
 
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
-export const APP_VERSION = '4.0.1';
+export const APP_VERSION = '4.0.3';
 
-/** แปลงเวลา build (จาก Vite define) เป็นข้อความไทย — อัปเดตอัตโนมัติทุกครั้งที่ build/deploy */
-function formatAppLastUpdatedFromBuild(): string {
-  try {
-    const iso = typeof __APP_BUILD_ISO__ !== 'undefined' ? __APP_BUILD_ISO__ : '';
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
-    const s = d.toLocaleString('th-TH', {
-      timeZone: 'Asia/Bangkok',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    return `${s} น.`;
-  } catch {
-    return '—';
-  }
-}
-
-/** วันที่และเวลาที่ build ล่าสุด (จากเซิร์ฟเวอร์ build / Vercel) */
-export const APP_LAST_UPDATED = formatAppLastUpdatedFromBuild();
+/** วันที่และเวลาที่ build/รัน dev ล่าสุด — รูปแบบ วว/ดด/ปปปป HH:MM น. (เช่น 21/04/2569 14:30 น.) */
+const buildIso =
+  typeof __APP_BUILD_ISO__ === 'string' && __APP_BUILD_ISO__.trim() !== ''
+    ? __APP_BUILD_ISO__.trim()
+    : new Date().toISOString();
+export const APP_LAST_UPDATED = formatDisplayDateTime(buildIso);
 
 /** ชื่อระบบพร้อมเวอร์ชัน (สำหรับแสดงบน UI) */
-export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}`;
+const ENV_LABEL = String(import.meta.env.VITE_ENV_LABEL ?? '').trim();
+const getEnvSuffix = (): string => {
+  if (ENV_LABEL) return ` (${ENV_LABEL})`;
+  if (typeof window === 'undefined' || !window.location?.hostname) return '';
+  const host = window.location.hostname;
+  const isPreviewHost = /^connex-leave-flow-[a-z0-9-]+\.vercel\.app$/i.test(host);
+  return isPreviewHost ? ' (Preview)' : '';
+};
+const ENV_SUFFIX = getEnvSuffix();
+export const APP_TITLE_WITH_VERSION = `Leave Flow Pro v${APP_VERSION}${ENV_SUFFIX}`;
 
 /** ป้ายชื่อประเภทวันลาอยู่ที่ store (getLeaveTypes) แล้ว ไม่ใช้ค่านี้สำหรับประเภทแบบเดิม */
 export const STATUS_LABELS: Record<LeaveStatus, string> = {
@@ -43,6 +38,26 @@ export const STATUS_COLORS: Record<LeaveStatus, string> = {
   [LeaveStatus.APPROVED]: 'bg-green-100 text-green-800',
   [LeaveStatus.REJECTED]: 'bg-red-100 text-red-800',
 };
+
+/** มาตรฐานความยาวสูงสุดของฟิลด์ข้อความ (ใช้ร่วมกันทั้งระบบ) */
+export const FIELD_MAX_LENGTHS = {
+  employeeName: 60,
+  email: 30,
+  password: 64,
+  position: 30,
+  department: 50,
+  taskLabel: 50,
+  leaveTypeLabel: 50,
+  expenseTypeLabel: 50,
+  holidayName: 200,
+  leaveReason: 200,
+  approvalComment: 200,
+  searchText: 60,
+  expenseDetail: 200,
+  expenseClaimId: 12,
+  projectCode: 20,
+  projectName: 120,
+} as const;
 
 /**
  * รายการวันหยุดประจำปี 2569 ตามประกาศบริษัท (Map: yyyy-mm-dd -> Holiday Name)

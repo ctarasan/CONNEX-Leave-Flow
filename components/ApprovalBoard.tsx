@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
 import { LeaveRequest, LeaveStatus } from '../types';
-import { STATUS_COLORS, STATUS_LABELS, HOLIDAYS_2026 } from '../constants';
+import { STATUS_COLORS, STATUS_LABELS, HOLIDAYS_2026, FIELD_MAX_LENGTHS } from '../constants';
 import { updateRequestStatus, getLeaveTypes } from '../store';
-import { formatThaiDate, formatThaiDateTime } from '../utils';
+import { formatYmdAsDdMmBe, formatBangkokDdMmBeTime } from '../utils';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface ApprovalBoardProps {
   requests: LeaveRequest[];
@@ -11,9 +12,19 @@ interface ApprovalBoardProps {
   onUpdate: () => void;
 }
 
+const normalizeId = (raw: unknown): string => {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10)).padStart(3, '0');
+  return s;
+};
+
 const ApprovalBoard: React.FC<ApprovalBoardProps> = ({ requests, currentUserId, onUpdate }) => {
   const [comment, setComment] = useState('');
-  const pendingRequests = requests.filter(r => r.status === LeaveStatus.PENDING);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const pendingRequests = requests
+    .filter((r) => r.status === LeaveStatus.PENDING)
+    .filter((r) => normalizeId(r.userId) !== normalizeId(currentUserId));
 
   const calculateBusinessDays = (startStr: string, endStr: string) => {
     const start = new Date(startStr);
@@ -30,9 +41,11 @@ const ApprovalBoard: React.FC<ApprovalBoardProps> = ({ requests, currentUserId, 
   };
 
   const handleAction = (id: string, status: LeaveStatus) => {
-    updateRequestStatus(id, status, comment, currentUserId);
-    setComment('');
-    onUpdate();
+    runAction(`approval-${id}-${status}`, async () => {
+      await Promise.resolve(updateRequestStatus(id, status, comment, currentUserId));
+      setComment('');
+      onUpdate();
+    });
   };
 
   return (
@@ -69,13 +82,13 @@ const typeLabel = (found?.label && found.label.trim()) ? found.label : req.type 
                     </p>
                     {req.submittedAt && (
                       <p className="text-[10px] text-gray-500 font-medium mt-1.5">
-                        ส่งเมื่อ: {formatThaiDateTime(req.submittedAt)}
+                        ส่งเมื่อ: {formatBangkokDdMmBeTime(req.submittedAt)}
                       </p>
                     )}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">ระยะเวลา</p>
-                    <p className="text-xs font-bold text-gray-700">{formatThaiDate(req.startDate)} ถึง {formatThaiDate(req.endDate)}</p>
+                    <p className="text-xs font-bold text-gray-700">{formatYmdAsDdMmBe(req.startDate)} ถึง {formatYmdAsDdMmBe(req.endDate)}</p>
                   </div>
                 </div>
                 
@@ -85,21 +98,29 @@ const typeLabel = (found?.label && found.label.trim()) ? found.label : req.type 
                 </div>
                 
                 <div className="space-y-3">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    ความเห็นเพิ่มเติม (Max Length = {FIELD_MAX_LENGTHS.approvalComment})
+                  </label>
                   <input 
                     type="text" 
                     placeholder="ใส่ความเห็นเพิ่มเติมเพื่อแจ้งพนักงาน..."
+                    maxLength={FIELD_MAX_LENGTHS.approvalComment}
                     className="w-full p-3 text-sm bg-white border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 font-bold"
                     onChange={(e) => setComment(e.target.value)}
                   />
                   <div className="flex gap-3">
                     <button 
                       onClick={() => handleAction(req.id, LeaveStatus.APPROVED)}
+                      disabled={isActionBusy(`approval-${req.id}-${LeaveStatus.APPROVED}`) || isActionBusy(`approval-${req.id}-${LeaveStatus.REJECTED}`)}
+                      aria-busy={isActionBusy(`approval-${req.id}-${LeaveStatus.APPROVED}`)}
                       className="flex-1 bg-emerald-600 text-white py-3 rounded-xl text-sm font-black hover:bg-emerald-700 transition shadow-lg shadow-emerald-100"
                     >
                       อนุมัติ
                     </button>
                     <button 
                       onClick={() => handleAction(req.id, LeaveStatus.REJECTED)}
+                      disabled={isActionBusy(`approval-${req.id}-${LeaveStatus.APPROVED}`) || isActionBusy(`approval-${req.id}-${LeaveStatus.REJECTED}`)}
+                      aria-busy={isActionBusy(`approval-${req.id}-${LeaveStatus.REJECTED}`)}
                       className="flex-1 bg-rose-600 text-white py-3 rounded-xl text-sm font-black hover:bg-rose-700 transition shadow-lg shadow-rose-100"
                     >
                       ไม่อนุมัติ

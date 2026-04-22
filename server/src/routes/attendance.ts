@@ -4,6 +4,24 @@ import { rowToCamel } from '../util.js';
 
 const router = Router();
 
+function getBangkokNow(): { dateStr: string; timeStr: string } {
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const timeStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(now);
+  return { dateStr, timeStr };
+}
+
 /** ดึง IP ของ client (รองรับ proxy/Vercel: X-Forwarded-For, X-Real-IP) */
 function getClientIp(req: { ip?: string; socket?: { remoteAddress?: string }; headers?: Record<string, string | string[] | undefined> }): string {
   const forwarded = req.headers?.['x-forwarded-for'];
@@ -102,9 +120,8 @@ router.post('/', async (req, res) => {
     
     if (type && ['IN', 'OUT'].includes(type)) {
       // Format 1: Real-time check in/out
-      const now = new Date();
-      dateStr = now.toISOString().split('T')[0];
-      const timeStr = now.toTimeString().slice(0, 8);
+      const { dateStr: bangkokDate, timeStr } = getBangkokNow();
+      dateStr = bangkokDate;
       isLate = type === 'IN' && timeStr > '09:30:00';
       checkInTime = type === 'IN' ? timeStr : null;
       checkOutTime = type === 'OUT' ? timeStr : null;
@@ -122,8 +139,15 @@ router.post('/', async (req, res) => {
       `INSERT INTO attendance (user_id, date, check_in, check_out, status)
        VALUES ($1, $2, $3, $4, 'present')
        ON CONFLICT (user_id, date) DO UPDATE SET
-         check_in = COALESCE($3, attendance.check_in),
-         check_out = COALESCE($4, attendance.check_out)`,
+         check_in = CASE
+           WHEN $3 IS NOT NULL THEN $3
+           ELSE attendance.check_in
+         END,
+         check_out = CASE
+           WHEN $3 IS NOT NULL THEN NULL
+           WHEN $4 IS NOT NULL THEN $4
+           ELSE attendance.check_out
+         END`,
       [userId, dateStr, checkInTime, checkOutTime]
     );
     

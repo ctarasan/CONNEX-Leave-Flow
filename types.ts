@@ -23,6 +23,9 @@ export interface LeaveTypeDefinition {
   defaultQuota: number;
   order: number;
   isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface User {
@@ -32,11 +35,23 @@ export interface User {
   password: string;
   role: UserRole;
   gender: Gender;
+  position: string;
   department: string;
   joinDate: string; // ISO string (YYYY-MM-DD)
+  /** สถานะพนักงานลาออก */
+  isResigned?: boolean;
+  /** วันที่ลาออก (YYYY-MM-DD) เมื่อ isResigned = true */
+  resignedDate?: string;
   managerId?: string;
   /** โควต้าตามประเภทวันลา (key = leaveTypeId) — ตั้งค่าจากประเภทวันลา ไม่แก้ที่หน้าพนักงาน */
   quotas: Record<string, number>;
+  /** ระงับการใช้งานชั่วคราว (Admin เท่านั้นที่ปลดได้) */
+  isSuspended?: boolean;
+  /** จำนวนครั้งที่ใส่รหัสผ่านผิดสะสม (ใช้สำหรับ policy suspend) */
+  failedLoginAttempts?: number;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
 }
 
 export interface LeaveRequest {
@@ -88,4 +103,80 @@ export interface MonthlyReport {
   approved: number;
   rejected: number;
   byType: Record<string, number>;
+}
+
+export interface TimesheetTaskTypeDefinition {
+  id: string;
+  label: string;
+  order: number;
+  isActive: boolean;
+}
+
+export interface TimesheetProject {
+  id: string;
+  code: string;
+  name: string;
+  taskTargetDays: Record<string, number>;
+  assignedUserIds: string[];
+  projectManagerId: string;
+  isActive: boolean;
+  updatedById?: string;
+  updatedByName?: string;
+  updatedAt?: string;
+}
+
+export interface TimesheetEntry {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  projectId: string;
+  taskType: string;
+  minutes: number;
+  updatedAt: string;
+}
+
+export type ExpenseClaimStatus = 'DRAFT' | 'WAITING' | 'APPROVED' | 'PAID' | 'REJECTED';
+
+export interface ExpenseTypeDefinition {
+  id: string;
+  label: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedById?: string;
+  updatedByName?: string;
+}
+
+export interface ExpenseClaimItem {
+  id: string;
+  expenseDate: string; // YYYY-MM-DD
+  projectId: string;
+  expenseTypeId: string;
+  detail: string;
+  amount: number;
+}
+
+export interface ExpenseClaim {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  approverId?: string;
+  approverName?: string;
+  status: ExpenseClaimStatus;
+  claimDate: string; // YYYY-MM-DD
+  submittedAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  rejectReason?: string;
+  paidDate?: string; // YYYY-MM-DD
+  paidById?: string;
+  paidByName?: string;
+  paidSetAt?: string;
+  adminNote?: string;
+  projectSummary?: string;
+  detailSummary?: string;
+  items: ExpenseClaimItem[];
+  totalAmount: number;
+  createdAt: string;
+  updatedAt: string;
 }

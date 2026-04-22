@@ -3,16 +3,31 @@
  * Multi-user: หลัง login เก็บ token ใน sessionStorage และส่งใน Authorization ทุก request
  */
 
-const BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+const PROD_BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
+/** สำรองเมื่อยังไม่ตั้ง VITE_PREVIEW_API_URL บน Vercel — อัปเดตให้ตรง deployment Preview ล่าสุดของ connex-leave-flow-doak เวลาปล่อยคู่กับ frontend */
+const DEFAULT_CONNEX_PREVIEW_BACKEND = 'https://connex-leave-flow-doak-pk6q925h2-ctarasans-projects.vercel.app';
+const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
+  ? String(import.meta.env.VITE_PREVIEW_API_URL).trim().replace(/\/$/, '')
+  : '';
+const VERCEL_ENV = typeof import.meta !== 'undefined' && import.meta.env?.VERCEL_ENV
+  ? String(import.meta.env.VERCEL_ENV).trim().toLowerCase()
+  : '';
 
 function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-    ? String(import.meta.env.VITE_API_URL).replace(/\/$/, '')
+    ? String(import.meta.env.VITE_API_URL).trim().replace(/\/$/, '')
     : '';
-  if (typeof window !== 'undefined' && window.location?.hostname === 'connex-leave-flow.vercel.app') {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
     const origin = window.location.origin.replace(/\/$/, '');
-    if (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app')) {
-      return BACKEND_URL;
+    // Support both the main alias and generated Vercel preview domains for this frontend project.
+    const isConnexFrontendHost = /^connex-leave-flow(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host);
+    if (isConnexFrontendHost && (!fromEnv || fromEnv === origin || fromEnv.includes('connex-leave-flow.vercel.app'))) {
+      // For Preview deployments, point to preview backend only (do not fall back to production backend).
+      if (VERCEL_ENV === 'preview') {
+        return PREVIEW_BACKEND_URL || DEFAULT_CONNEX_PREVIEW_BACKEND;
+      }
+      return PROD_BACKEND_URL;
     }
   }
   return fromEnv;
@@ -121,8 +136,9 @@ export async function getBackendStatus(): Promise<{ server: boolean; database: b
   return { server: !!data?.server, database: !!data?.database, message: data?.message };
 }
 
-export async function getUsers(): Promise<Record<string, unknown>[]> {
-  const res = await fetchWithAuth(`${API_BASE}/api/users`);
+export async function getUsers(includeResigned = true): Promise<Record<string, unknown>[]> {
+  const q = includeResigned ? '?includeResigned=true' : '?includeResigned=false';
+  const res = await fetchWithAuth(`${API_BASE}/api/users${q}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     throw new Error(getErrorMessage(res, data) || 'โหลดผู้ใช้ไม่สำเร็จ');
@@ -242,6 +258,81 @@ export async function postAttendance(userId: string, type: 'IN' | 'OUT'): Promis
   return res.json();
 }
 
+export async function getTimesheetTaskTypes(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/task-types`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดประเภทงาน Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function putTimesheetTaskTypes(types: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/task-types`, {
+    method: 'PUT',
+    body: JSON.stringify(types),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกประเภทงาน Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getTimesheetProjects(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/projects`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดโครงการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postTimesheetProject(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/projects`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกโครงการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getTimesheetEntries(params?: { userId?: string; date?: string; projectId?: string }): Promise<Record<string, unknown>[]> {
+  const q = new URLSearchParams();
+  if (params?.userId) q.set('userId', params.userId);
+  if (params?.date) q.set('date', params.date);
+  if (params?.projectId) q.set('projectId', params.projectId);
+  const query = q.toString();
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/entries${query ? `?${query}` : ''}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายการ Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postTimesheetEntry(body: {
+  id?: string;
+  userId: string;
+  date: string;
+  projectId: string;
+  taskType: string;
+  minutes: number;
+}): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/timesheet/entries`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึก Timesheet ไม่สำเร็จ');
+  }
+  return res.json();
+}
+
 export async function getNotifications(userId: string): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/notifications?userId=${encodeURIComponent(userId)}`);
   if (!res.ok) {
@@ -304,6 +395,23 @@ export async function deleteUser(id: string): Promise<void> {
   }
 }
 
+export async function postRecalculateVacationQuotaCurrent(userId?: string): Promise<{ updatedCount: number; users: Record<string, unknown>[] }> {
+  const body = userId ? { userId } : undefined;
+  const res = await fetchWithAuth(`${API_BASE}/api/users/recalculate-vacation-quota-current`, {
+    method: 'POST',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ประมวลผลโควต้าลาพักร้อนไม่สำเร็จ');
+  }
+  const data = await res.json().catch(() => ({})) as { updatedCount?: unknown; users?: unknown };
+  return {
+    updatedCount: Number(data.updatedCount) || 0,
+    users: Array.isArray(data.users) ? (data.users as Record<string, unknown>[]) : [],
+  };
+}
+
 export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
   const res = await fetchWithAuth(`${API_BASE}/api/leave-types`, {
     method: 'PUT',
@@ -314,4 +422,129 @@ export async function putLeaveTypes(types: Record<string, unknown>[]): Promise<R
     throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
   }
   return res.json();
+}
+
+export async function patchLeaveType(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/leave-types/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'อัปเดตประเภทวันลาไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function deleteLeaveType(id: string): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/leave-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ลบประเภทวันลาไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getExpenseTypes(): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postExpenseType(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function deleteExpenseType(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ลบประเภทค่าใช้จ่ายไม่สำเร็จ');
+  }
+}
+
+export async function getExpenseClaims(params?: { from?: string; to?: string; scope?: 'mine' | 'subordinates' | 'all' }): Promise<Record<string, unknown>[]> {
+  const q = new URLSearchParams();
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  if (params?.scope) q.set('scope', params.scope);
+  const query = q.toString();
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims${query ? `?${query}` : ''}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายการเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function getExpenseClaimById(id: string): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'โหลดรายละเอียดใบเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function postExpenseClaim(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'บันทึกใบเบิกไม่สำเร็จ');
+  }
+  return res.json();
+}
+
+export async function approveExpenseClaim(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'อนุมัติใบเบิกไม่สำเร็จ');
+  }
+}
+
+export async function setExpenseClaimPayDate(id: string, paidDate: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/pay-date`, {
+    method: 'POST',
+    body: JSON.stringify({ paidDate }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'กำหนดวันทำจ่ายไม่สำเร็จ');
+  }
+}
+
+export async function rejectExpenseClaim(id: string, reason: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ไม่สามารถ Reject ใบเบิกได้');
+  }
+}
+
+export async function submitExpenseClaim(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/expenses/claims/${encodeURIComponent(id)}/submit`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(getErrorMessage(res, data) || 'ไม่สามารถ Submit ใบเบิกได้');
+  }
 }

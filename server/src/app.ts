@@ -8,6 +8,8 @@ import holidaysRouter from './routes/holidays.js';
 import authRouter from './routes/auth.js';
 import attendanceRouter from './routes/attendance.js';
 import notificationsRouter from './routes/notifications.js';
+import timesheetRouter from './routes/timesheet.js';
+import expensesRouter from './routes/expenses.js';
 import { optionalAuth, checkSession } from './middleware/auth.js';
 import { checkConnection } from './db.js';
 
@@ -63,5 +65,7 @@ app.use('/api/leave-requests', leaveRequestsRouter);
 app.use('/api/holidays', holidaysRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/timesheet', timesheetRouter);
+app.use('/api/expenses', expensesRouter);
 
 export default app;

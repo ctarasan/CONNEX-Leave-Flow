@@ -30,18 +30,25 @@ async function runMigrations() {
     await pool.query('SELECT NOW()');
     console.log('✅ เชื่อมต่อ database สำเร็จ\n');
 
-    // อ่านไฟล์ migration
-    const migrationPath = path.resolve(__dirname, 'migrations', '001_create_tables.sql');
-    
-    if (!fs.existsSync(migrationPath)) {
-      console.error('❌ ไม่พบไฟล์ migration:', migrationPath);
+    // อ่านไฟล์ migration ทั้งหมดตามลำดับชื่อไฟล์
+    const migrationsDir = path.resolve(__dirname, 'migrations');
+    if (!fs.existsSync(migrationsDir)) {
+      console.error('❌ ไม่พบโฟลเดอร์ migrations:', migrationsDir);
       process.exit(1);
     }
-
-    const sql = fs.readFileSync(migrationPath, 'utf8');
-
-    console.log('📝 กำลังรัน migration: 001_create_tables.sql');
-    await pool.query(sql);
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort((a, b) => a.localeCompare(b));
+    if (migrationFiles.length === 0) {
+      console.error('❌ ไม่พบไฟล์ .sql ใน migrations');
+      process.exit(1);
+    }
+    for (const file of migrationFiles) {
+      const migrationPath = path.resolve(migrationsDir, file);
+      const sql = fs.readFileSync(migrationPath, 'utf8');
+      console.log(`📝 กำลังรัน migration: ${file}`);
+      await pool.query(sql);
+    }
     console.log('✅ Migration สำเร็จ!\n');
 
     console.log('✨ สร้าง tables ครบถ้วน:');
@@ -51,6 +58,9 @@ async function runMigrations() {
     console.log('   - holidays');
     console.log('   - attendance');
     console.log('   - notifications');
+    console.log('   - timesheet_task_types');
+    console.log('   - timesheet_projects');
+    console.log('   - timesheet_entries');
     console.log('\n📦 เพิ่มข้อมูลตั้งต้น:');
     console.log('   - 8 ประเภทการลา');
     console.log('   - วันหยุดนักขัตฤกษ์ 2026\n');

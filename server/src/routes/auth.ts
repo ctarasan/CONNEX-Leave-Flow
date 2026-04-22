@@ -44,20 +44,138 @@ router.post('/login', async (req, res) => {
     fetch('http://127.0.0.1:7674/ingest/df21c9fd-6b65-40c3-af5e-5cbb5dd5b203', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ab67f8' }, body: JSON.stringify({ sessionId: 'ab67f8', location: 'auth.ts:login', message: 'login attempt', data: { emailLength: emailTrimmed.length, passwordLength: String(password).length }, timestamp: Date.now(), hypothesisId: 'H2,H3' }) }).catch(() => {});
     // #endregion
     // ใช้เฉพาะคอลัมน์พื้นฐาน (ไม่ใช้ quotas / sick_quota) เพื่อให้ใช้ได้กับทุก schema
-    const { rows } = await pool.query(
-      `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId", password_hash
-       FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
-      [emailTrimmed]
-    );
-    const row = rows[0] as { password_hash: string; id: string; role: string; [k: string]: unknown } | undefined;
+    // และต้องรองรับกรณียังไม่ได้รัน migration 006 (is_suspended / failed_login_attempts ยังไม่มี)
+    let rows: Record<string, unknown>[] = [];
+    try {
+      const r = await pool.query(
+        `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
+          password_hash,
+          COALESCE(is_resigned, FALSE) as "isResigned",
+          COALESCE(resigned_date::text, '') as "resignedDate",
+          COALESCE(is_suspended, FALSE) as "isSuspended",
+          COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
+         FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+        [emailTrimmed]
+      );
+      rows = r.rows as Record<string, unknown>[];
+    } catch (qErr) {
+      const msg = qErr instanceof Error ? qErr.message : '';
+      if (msg.includes('position') && msg.includes('column')) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash,
+              FALSE as "isResigned",
+              ''::text as "resignedDate",
+              COALESCE(is_suspended, FALSE) as "isSuspended",
+              COALESCE(failed_login_attempts, 0) as "failedLoginAttempts"
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = r.rows as Record<string, unknown>[];
+        } catch {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isResigned: false,
+            resignedDate: '',
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        }
+      } else if (msg.includes('is_suspended') || msg.includes('failed_login_attempts') || msg.includes('column')) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, position, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isResigned: false,
+            resignedDate: '',
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        } catch {
+          const r = await pool.query(
+            `SELECT id, name, email, role, gender, department, join_date as "joinDate", manager_id as "managerId",
+              password_hash
+             FROM users WHERE LOWER(TRIM(email)) = LOWER($1)`,
+            [emailTrimmed]
+          );
+          rows = (r.rows as Record<string, unknown>[]).map((row) => ({
+            ...row,
+            isResigned: false,
+            resignedDate: '',
+            isSuspended: false,
+            failedLoginAttempts: 0,
+          }));
+        }
+      } else {
+        throw qErr;
+      }
+    }
+    const row = rows[0] as { password_hash: string; id: string; role: string; isSuspended?: boolean; failedLoginAttempts?: number; [k: string]: unknown } | undefined;
     if (!row) {
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
+    }
+    if (row.isSuspended === true) {
+      return res.status(403).json({
+        error: 'บัญชีผู้ใช้งานของท่านถูกระงับการใช้งานชั่วคราว เนื่องจากมีการลงชื่อเข้าใช้งานไม่สำเร็จเกินจำนวนครั้งที่กำหนด กรุณาติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ',
+        code: 'ACCOUNT_SUSPENDED',
+      });
     }
     const passwordTrimmed = String(password).trim();
     const hashFromDb = (row.password_hash ?? '').toString().trim();
     const ok = hashFromDb ? await bcrypt.compare(passwordTrimmed, hashFromDb) : false;
     if (!ok) {
-      return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
+      // Increment failed attempts; suspend at 3rd failed attempt.
+      const prev = Number(row.failedLoginAttempts) || 0;
+      const next = prev + 1;
+      const shouldSuspend = next >= 3;
+      try {
+        await pool.query(
+          `UPDATE users
+           SET failed_login_attempts = $2,
+               is_suspended = CASE WHEN $3 THEN TRUE ELSE COALESCE(is_suspended, FALSE) END,
+               suspended_at = CASE WHEN $3 THEN NOW() ELSE suspended_at END,
+               updated_at = NOW()
+           WHERE id = $1`,
+          [row.id, next, shouldSuspend]
+        );
+      } catch {
+        // If migration not applied yet, fallback to generic error.
+      }
+      if (shouldSuspend) {
+        return res.status(403).json({
+          error: 'ระบบได้ระงับการใช้งานบัญชีของท่านชั่วคราว เนื่องจากท่านลงชื่อเข้าใช้งานไม่สำเร็จเกิน 3 ครั้ง กรุณาติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ',
+          code: 'ACCOUNT_SUSPENDED',
+        });
+      }
+      if (next === 2) {
+        return res.status(401).json({
+          error: 'ท่านสามารถลงชื่อเข้าใช้งานได้อีกเพียง 1 ครั้ง หากกรอกข้อมูลไม่ถูกต้องอีก ระบบจะระงับการใช้งานบัญชีของท่านชั่วคราว และโปรดติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ',
+          code: 'LOGIN_WARNING',
+          remaining: 1,
+        });
+      }
+      return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง', code: 'INVALID_CREDENTIALS' });
+    }
+    // Successful login: reset failed attempts.
+    try {
+      await pool.query(
+        `UPDATE users SET failed_login_attempts = 0, updated_at = NOW() WHERE id = $1`,
+        [row.id]
+      );
+    } catch {
+      // ignore if migration not applied yet
     }
     const { password_hash: _, ...user } = row;
     const out = rowToCamel(user as Record<string, unknown>) as Record<string, unknown>;

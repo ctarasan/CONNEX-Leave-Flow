@@ -3,6 +3,8 @@ import { User, AttendanceRecord } from '../types';
 import { saveAttendance, getAttendanceRecords } from '../store';
 import { useAlert } from '../AlertContext';
 import { isApiMode, getAttendanceVerifyNetwork } from '../api';
+import { todayLocalYmd, formatYmdAsDdMmBe } from '../utils';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 interface AttendanceModuleProps {
   user: User;
@@ -13,7 +15,9 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
   const { showAlert } = useAlert();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const { runAction, isActionBusy } = useAsyncAction();
+  const isSubmitting = isActionBusy('attendance-submit');
+  const isVerifying = isActionBusy('attendance-verify');
   const [verificationStatus, setVerificationStatus] = useState<'IDLE' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -23,59 +27,82 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
     return () => clearInterval(timer);
   }, [user.id]);
 
+  const getLocalDateString = (date = new Date()) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   const todayRecord = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString(new Date());
     return records.find(r => r.date === todayStr);
   }, [records]);
+  const hasCheckedInToday = !!todayRecord?.checkIn;
+  const hasCheckedOutToday = !!todayRecord?.checkOut;
+  const canCheckIn = verificationStatus === 'SUCCESS' && !isSubmitting && (!hasCheckedInToday || hasCheckedOutToday);
+  const canCheckOut = !isSubmitting && hasCheckedInToday && !hasCheckedOutToday;
 
   const verifyWiFiNetwork = async () => {
-    setIsVerifying(true);
-    setVerificationStatus('IDLE');
-    setStatusMessage('กำลังตรวจสอบเครือข่าย...');
+    await runAction('attendance-verify', async () => {
+      setVerificationStatus('IDLE');
+      setStatusMessage('กำลังตรวจสอบเครือข่าย...');
 
-    if (!isApiMode()) {
-      setVerificationStatus('FAILED');
-      setStatusMessage(`การตรวจสอบ WiFi "${REQUIRED_SSID}" ใช้ได้เมื่อแอปเชื่อมต่อเซิร์ฟเวอร์บริษัท กรุณาเชื่อมต่อ WiFi ออฟฟิศ`);
-      setIsVerifying(false);
-      return;
-    }
-
-    try {
-      const { allowed, clientIp } = await getAttendanceVerifyNetwork();
-      if (allowed) {
-        setVerificationStatus('SUCCESS');
-        setStatusMessage('เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ — สามารถลงเวลาได้');
-      } else {
+      if (!isApiMode()) {
         setVerificationStatus('FAILED');
-        setStatusMessage(clientIp
-          ? 'ตรวจสอบไม่ผ่าน: ไม่อยู่บนเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศเท่านั้น'
-          : 'ตรวจสอบไม่ผ่าน: กรุณาเชื่อมต่อ WiFi ออฟฟิศ — ลงเวลาได้เฉพาะที่ออฟฟิศ');
+        setStatusMessage('การตรวจสอบ WiFi ออฟฟิศ ใช้ได้เมื่อแอปเชื่อมต่อเซิร์ฟเวอร์บริษัท กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
+        return;
       }
-    } catch {
-      setVerificationStatus('FAILED');
-      setStatusMessage('ตรวจสอบไม่ผ่าน: ไม่สามารถยืนยันเครือข่ายได้ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
-    } finally {
-      setIsVerifying(false);
-    }
+
+      try {
+        const { allowed, clientIp } = await getAttendanceVerifyNetwork();
+        if (allowed) {
+          setVerificationStatus('SUCCESS');
+          setStatusMessage('เชื่อมต่อสำเร็จ: อยู่บนเครือข่ายออฟฟิศ — สามารถลงเวลาได้');
+        } else {
+          setVerificationStatus('FAILED');
+          setStatusMessage(clientIp
+            ? 'ตรวจสอบไม่ผ่าน: ไม่อยู่บนเครือข่ายออฟฟิศ — กรุณาเชื่อมต่อ WiFi ออฟฟิศเท่านั้น'
+            : 'ตรวจสอบไม่ผ่าน: กรุณาเชื่อมต่อ WiFi ออฟฟิศ — ลงเวลาได้เฉพาะที่ออฟฟิศ');
+        }
+      } catch {
+        setVerificationStatus('FAILED');
+        setStatusMessage('ตรวจสอบไม่ผ่าน: ไม่สามารถยืนยันเครือข่ายได้ — กรุณาเชื่อมต่อ WiFi ออฟฟิศ');
+      }
+    });
   };
 
   const handleAction = async (type: 'IN' | 'OUT') => {
-    if (verificationStatus !== 'SUCCESS') {
+    if (type === 'IN' && verificationStatus !== 'SUCCESS') {
       showAlert('กรุณาเชื่อมต่อ WiFi ออฟฟิศ แล้วกด "ตรวจสอบเครือข่าย WiFi" ให้ผ่านก่อนลงเวลา');
       return;
     }
-    try {
-      const result = saveAttendance(user.id, type);
-      const record = typeof (result as Promise<unknown>)?.then === 'function'
-        ? await (result as Promise<AttendanceRecord>)
-        : result as AttendanceRecord;
-      setRecords(getAttendanceRecords(user.id));
-      onUpdate();
-      showAlert(type === 'IN' ? 'เช็คอินสำเร็จ (ผ่านเครือข่ายออฟฟิศ)' : 'เช็คเอาท์สำเร็จ');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
-      showAlert(msg);
+    if (type === 'OUT' && !hasCheckedInToday) {
+      showAlert('ต้องเช็คอินก่อนจึงจะเช็คเอาท์ได้');
+      return;
     }
+    await runAction('attendance-submit', async () => {
+      try {
+        const result = saveAttendance(user.id, type);
+        const record = typeof (result as Promise<unknown>)?.then === 'function'
+          ? await (result as Promise<AttendanceRecord>)
+          : result as AttendanceRecord;
+        setRecords((prev) => {
+          const idx = prev.findIndex((r) => r.date === record.date);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...record };
+            return next;
+          }
+          return [record, ...prev];
+        });
+        onUpdate();
+        showAlert(type === 'IN' ? 'บันทึกเวลาเช็คอินสำเร็จ' : 'บันทึกเวลาเช็คเอาท์สำเร็จ');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'ลงเวลาไม่สำเร็จ';
+        showAlert(msg);
+      }
+    });
   };
 
   return (
@@ -89,7 +116,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
                 {currentTime.toLocaleTimeString('th-TH', { hour12: false })}
               </p>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                {currentTime.toLocaleDateString('th-TH', { dateStyle: 'full' })}
+                {formatYmdAsDdMmBe(todayLocalYmd())}
               </p>
             </div>
 
@@ -117,6 +144,7 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
               <button 
                 onClick={verifyWiFiNetwork}
                 disabled={isVerifying}
+                aria-busy={isVerifying}
                 className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm disabled:opacity-50"
               >
                 {isVerifying ? 'กำลังตรวจสอบ...' : 'ตรวจสอบเครือข่าย WiFi'}
@@ -128,14 +156,16 @@ const AttendanceModule: React.FC<AttendanceModuleProps> = ({ user, onUpdate }) =
           <div className="w-full md:w-72 space-y-4">
             <button 
               onClick={() => handleAction('IN')}
-              disabled={!!todayRecord?.checkIn || verificationStatus !== 'SUCCESS'}
+              disabled={!canCheckIn}
+              aria-busy={isSubmitting}
               className="w-full h-24 bg-emerald-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คอิน (IN)
             </button>
             <button 
               onClick={() => handleAction('OUT')}
-              disabled={!todayRecord?.checkIn || !!todayRecord?.checkOut || verificationStatus !== 'SUCCESS'}
+              disabled={!canCheckOut}
+              aria-busy={isSubmitting}
               className="w-full h-24 bg-blue-600 text-white rounded-[32px] font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition disabled:opacity-30 disabled:grayscale transform active:scale-95"
             >
               เช็คเอาท์ (OUT)

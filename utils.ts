@@ -53,8 +53,90 @@ export const currentCEYear = (): number => new Date().getFullYear();
 /** ปีปัจจุบันในปี พ.ศ. */
 export const currentBEYear = (): number => new Date().getFullYear() + 543;
 
+/** วันนี้ในเครื่องเป็น YYYY-MM-DD (ค.ศ.) — ใช้กับ input ภายใน */
+export const todayLocalYmd = (): string => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * แปลง YYYY-MM-DD (ค.ศ.) เป็น วว/ดด/ปปปป โดยปีเป็น พ.ศ. 4 หลัก
+ * รองรับค่าที่มีต่อท้ายด้วยเวลา (ใช้เฉพาะ 10 ตัวแรก)
+ */
+export const formatYmdAsDdMmBe = (ymd: string): string => {
+  const s = String(ymd ?? '').trim();
+  const head = s.slice(0, 10);
+  const m = head.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s || '-';
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  if (!y || !mo || !d) return '-';
+  return `${String(d).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543}`;
+};
+
 /** เวลาไทย (กรุงเทพ) = UTC+7 */
 const THAILAND_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** วันที่ (ไม่รวมเวลา) ตาม timezone กรุงเทพ เป็น วว/ดด/ปปปป */
+export const formatBangkokDateAsDdMmBe = (isoStr: string | Date): string => {
+  if (isoStr == null || isoStr === '') return '—';
+  const d = typeof isoStr === 'string' ? new Date(isoStr) : isoStr;
+  if (isNaN(d.getTime())) return '—';
+  const bangkok = new Date(d.getTime() + THAILAND_UTC_OFFSET_MS);
+  const y = bangkok.getUTCFullYear();
+  const mo = bangkok.getUTCMonth() + 1;
+  const day = bangkok.getUTCDate();
+  return `${String(day).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543}`;
+};
+
+/** วันที่+เวลา กรุงเทพ เป็น วว/ดด/ปปปป HH:MM น. (ปี พ.ศ.) */
+export const formatBangkokDdMmBeTime = (isoStr: string | Date | null | undefined): string => {
+  if (isoStr == null || isoStr === '') return '—';
+  const d = typeof isoStr === 'string' ? new Date(isoStr) : isoStr;
+  if (isNaN(d.getTime())) return '—';
+  const bangkok = new Date(d.getTime() + THAILAND_UTC_OFFSET_MS);
+  const y = bangkok.getUTCFullYear();
+  const mo = bangkok.getUTCMonth() + 1;
+  const day = bangkok.getUTCDate();
+  const h = bangkok.getUTCHours();
+  const min = bangkok.getUTCMinutes();
+  return `${String(day).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y + 543} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')} น.`;
+};
+
+/**
+ * มาตรฐานการแสดง "วันที่" ในระบบ: **วว/ดด/ปปปป (ปี พ.ศ.)** เช่น `21/04/2569`
+ * - ค่าแบบ `YYYY-MM-DD` เท่านั้น → ใช้ `formatYmdAsDdMmBe` (ไม่เลื่อนวันเพราะ timezone)
+ * - ค่าแบบ ISO datetime → ใช้ `formatBangkokDateAsDdMmBe` (อิงเวลาไทย UTC+7)
+ */
+export const formatDisplayDate = (value: string | Date | null | undefined): string => {
+  if (value == null || value === '') return '—';
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '—';
+    return formatBangkokDateAsDdMmBe(value);
+  }
+  const s = String(value).trim();
+  if (!s) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatYmdAsDdMmBe(s);
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s) || /Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    return formatBangkokDateAsDdMmBe(s);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return formatBangkokDateAsDdMmBe(d);
+  }
+  return formatYmdAsDdMmBe(s);
+};
+
+/**
+ * มาตรฐานการแสดงวันที่+เวลา: **วว/ดด/ปปปป HH:MM น.** (ปี พ.ศ., เวลาไทย)
+ */
+export const formatDisplayDateTime = (value: string | Date | null | undefined): string => {
+  if (value == null || value === '') return '—';
+  return formatBangkokDdMmBeTime(value);
+};
 
 /**
  * แปลง datetime เป็น "D ม.ค. พ.ศ., HH:MM น." (เวลาไทย UTC+7).
@@ -86,4 +168,13 @@ export const formatThaiDateTime = (isoStr: string | Date | null | undefined): st
   const h = bangkok.getUTCHours();
   const m = bangkok.getUTCMinutes();
   return `${day} ${THAI_MONTHS_SHORT[monthIdx]} ${be}, ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} น.`;
+};
+
+/** แปลงเวลาเป็น HH:MM (ตัดวินาทีออก) */
+export const formatTimeAsHm = (timeStr: string | null | undefined): string => {
+  const s = String(timeStr ?? '').trim();
+  if (!s) return '-';
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return s;
+  return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
 };

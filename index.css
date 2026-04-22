@@ -3,3 +3,46 @@
 body {
   font-family: 'Sarabun', sans-serif;
 }
+
+button,
+a,
+[role="button"],
+[role="link"] {
+  cursor: pointer;
+}
+
+.app-busy,
+.app-busy * {
+  cursor: progress !important;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: progress !important;
+}
+
+button[aria-busy="true"] {
+  position: relative;
+}
+
+button[aria-busy="true"]::after {
+  content: '';
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-left: 0.45rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  vertical-align: text-bottom;
+  animation: spin-loading 0.8s linear infinite;
+}
+
+@keyframes spin-loading {
+  to { transform: rotate(360deg); }
+}
+
+.app-busy-click,
+.app-busy-click * {
+  cursor: progress !important;
+}

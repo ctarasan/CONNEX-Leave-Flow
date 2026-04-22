@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        /** ตั้งตอน `vite build` / เริ่ม dev — ใช้แสดง "อัปเดตโค้ดล่าสุด" บน UI */
+        /** ISO timestamp ตอน build / ตอนรัน dev server — ใช้แสดง "อัปเดตโค้ดล่าสุด" */
         __APP_BUILD_ISO__: JSON.stringify(new Date().toISOString()),
       },
       resolve: {

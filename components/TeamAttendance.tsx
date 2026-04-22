@@ -1,13 +1,47 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { User, UserRole } from '../types';
-import { getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive } from '../store';
+import { calculateLatePenaltyDays, getAttendanceRecords, getAllUsers, getSubordinateIdSetRecursive, loadAttendanceForUser } from '../store';
+import { isApiMode } from '../api';
+import DatePicker from './DatePicker';
+import { formatYmdAsDdMmBe, formatTimeAsHm } from '../utils';
+import TablePagination, { useTablePagination } from './TablePagination';
+import { FIELD_MAX_LENGTHS } from '../constants';
 
 interface TeamAttendanceProps {
   manager: User;
 }
 
+/** แสดงระยะเวลาระหว่างเวลาเข้า–ออก เป็น "X ชั่วโมง Y นาที" (ไม่ใช่ทศนิยมชั่วโมง) */
+const formatWorkDurationThai = (dateStr: string, checkIn?: string | null, checkOut?: string | null): string => {
+  if (!checkIn || !checkOut) return '-';
+  const start = new Date(`${dateStr}T${checkIn}`);
+  const end = new Date(`${dateStr}T${checkOut}`);
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return '-';
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0 && m === 0) return '-';
+  if (h === 0) return `${m} นาที`;
+  if (m === 0) return `${h} ชั่วโมง`;
+  return `${h} ชั่วโมง ${m} นาที`;
+};
+
 const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
+  const today = useMemo(() => new Date(), []);
+  const monthStart = useMemo(() => {
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  }, [today]);
+  const monthEnd = useMemo(() => {
+    const y = today.getFullYear();
+    const m = today.getMonth() + 1;
+    const last = new Date(y, m, 0).getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+  }, [today]);
+
   const allUsers = useMemo(() => getAllUsers(), []);
   const subordinates = useMemo(() => {
     if (manager.role === UserRole.ADMIN) return allUsers;
@@ -15,22 +49,42 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
     return allUsers.filter(u => subordinateSet.has(u.id));
   }, [allUsers, manager]);
 
+  const [reloadTick, setReloadTick] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [nameQuery, setNameQuery] = useState('');
+  const [startDate, setStartDate] = useState(monthStart);
+  const [endDate, setEndDate] = useState(monthEnd);
+
+  useEffect(() => {
+    if (!isApiMode() || subordinates.length === 0) return;
+    setIsLoading(true);
+    Promise.all(subordinates.map(s => loadAttendanceForUser(s.id)))
+      .finally(() => {
+        setReloadTick(t => t + 1);
+        setIsLoading(false);
+      });
+  }, [subordinates]);
+
   const teamRecords = useMemo(() => {
-    const allAttendance = getAttendanceRecords();
-    const subIds = subordinates.map(s => s.id);
+    const allAttendance = isApiMode()
+      ? subordinates.flatMap(s => getAttendanceRecords(s.id))
+      : getAttendanceRecords().filter(r => subordinates.some(s => s.id === r.userId));
     return allAttendance
-      .filter(r => subIds.includes(r.userId))
       .map(r => ({
         ...r,
         userName: subordinates.find(s => s.id === r.userId)?.name || 'Unknown',
         department: subordinates.find(s => s.id === r.userId)?.department || '-'
       }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [subordinates]);
-
-  const [nameQuery, setNameQuery] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+      .sort((a, b) => {
+        const byDate = b.date.localeCompare(a.date);
+        if (byDate !== 0) return byDate;
+        const byName = a.userName.localeCompare(b.userName, 'th');
+        if (byName !== 0) return byName;
+        const byIn = (a.checkIn ?? '').localeCompare(b.checkIn ?? '');
+        if (byIn !== 0) return byIn;
+        return String(a.id).localeCompare(String(b.id));
+      });
+  }, [subordinates, reloadTick]);
 
   const filteredRecords = useMemo(() => {
     const q = nameQuery.trim().toLowerCase();
@@ -41,6 +95,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
       return true;
     });
   }, [teamRecords, nameQuery, startDate, endDate]);
+  const attendancePagination = useTablePagination(filteredRecords);
 
   return (
     <div className="bg-white rounded-[32px] shadow-sm border border-gray-200 overflow-hidden">
@@ -63,36 +118,31 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
           <div className="flex flex-col sm:flex-row gap-2 flex-1">
             <div className="flex flex-col">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                ชื่อพนักงาน
+                ชื่อพนักงาน (Max Length = {FIELD_MAX_LENGTHS.searchText})
               </label>
               <input
                 type="text"
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
+                maxLength={FIELD_MAX_LENGTHS.searchText}
                 placeholder="พิมพ์ชื่อหรือบางส่วนของชื่อ..."
                 className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500 w-full"
               />
             </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                จากวันที่
-              </label>
-              <input
-                type="date"
+            <div className="w-full sm:w-[220px]">
+              <DatePicker
+                label="จากวันที่"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500"
+                onChange={setStartDate}
+                maxDate={endDate || undefined}
               />
             </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-                ถึงวันที่
-              </label>
-              <input
-                type="date"
+            <div className="w-full sm:w-[220px]">
+              <DatePicker
+                label="ถึงวันที่"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 rounded-2xl border border-gray-200 text-xs font-bold text-gray-700 outline-none focus:border-blue-500"
+                onChange={setEndDate}
+                minDate={startDate || undefined}
               />
             </div>
           </div>
@@ -124,16 +174,8 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredRecords.map((rec) => {
-              let hoursText = '-';
-              if (rec.checkIn && rec.checkOut) {
-                const start = new Date(`${rec.date}T${rec.checkIn}`);
-                const end = new Date(`${rec.date}T${rec.checkOut}`);
-                const diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-                if (diff > 0) {
-                  hoursText = diff.toFixed(2);
-                }
-              }
+            {attendancePagination.pagedItems.map((rec) => {
+              const hoursText = formatWorkDurationThai(rec.date, rec.checkIn, rec.checkOut);
 
               return (
                 <tr key={rec.id} className="hover:bg-gray-50 transition">
@@ -142,21 +184,17 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                     <div className="text-[10px] text-gray-400 font-bold uppercase">{rec.department}</div>
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-700 text-sm">
-                    {new Date(rec.date).toLocaleDateString('th-TH', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {formatYmdAsDdMmBe(rec.date)}
                   </td>
                   <td
                     className={`px-6 py-4 text-center font-black text-sm ${
                       rec.isLate ? 'text-rose-600' : 'text-emerald-600'
                     }`}
                   >
-                    {rec.checkIn || '-'}
+                    {formatTimeAsHm(rec.checkIn)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-900 text-sm">
-                    {rec.checkOut || '-'}
+                    {formatTimeAsHm(rec.checkOut)}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-gray-800 text-sm">
                     {hoursText}
@@ -168,7 +206,7 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
                           มาสาย
                         </span>
                         <span className="text-[9px] text-rose-400 font-bold mt-1 tracking-tighter">
-                          หักพักร้อน 0.25 วัน
+                          หักพักร้อน {calculateLatePenaltyDays(rec.checkIn)} วัน
                         </span>
                       </div>
                     ) : (
@@ -192,6 +230,23 @@ const TeamAttendance: React.FC<TeamAttendanceProps> = ({ manager }) => {
             )}
           </tbody>
         </table>
+        <TablePagination
+          page={attendancePagination.page}
+          pageSize={attendancePagination.pageSize}
+          totalItems={attendancePagination.totalItems}
+          totalPages={attendancePagination.totalPages}
+          rangeStart={attendancePagination.rangeStart}
+          rangeEnd={attendancePagination.rangeEnd}
+          onPageChange={attendancePagination.setPage}
+          onPageSizeChange={attendancePagination.setPageSize}
+          leftOffsetPx={38}
+          rightOffsetPx={-38}
+        />
+        {isLoading && (
+          <div className="px-6 py-4 text-center text-gray-500 text-xs font-bold">
+            กำลังโหลดข้อมูลการเข้างานของทีม...
+          </div>
+        )}
       </div>
     </div>
   );

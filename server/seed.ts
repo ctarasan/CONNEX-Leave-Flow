@@ -147,17 +147,18 @@ async function seedUsers() {
       // Insert เข้า users table
       await pool.query(
         `INSERT INTO users (
-          id, name, email, password_hash, role, gender, department, 
+          id, name, email, password_hash, role, gender, position, department, 
           join_date, manager_id,
           sick_quota, personal_quota, vacation_quota, ordination_quota,
           military_quota, maternity_quota, sterilization_quota, paternity_quota
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           email = EXCLUDED.email,
           password_hash = EXCLUDED.password_hash,
           role = EXCLUDED.role,
           gender = EXCLUDED.gender,
+          position = EXCLUDED.position,
           department = EXCLUDED.department,
           join_date = EXCLUDED.join_date,
           manager_id = EXCLUDED.manager_id,
@@ -170,7 +171,7 @@ async function seedUsers() {
           sterilization_quota = EXCLUDED.sterilization_quota,
           paternity_quota = EXCLUDED.paternity_quota`,
         [
-          id, name, email, passwordHash, role, gender, position,
+          id, name, email, passwordHash, role, gender, position, '',
           joinDate, managerId,
           quotas.sick, quotas.personal, quotas.vacation, quotas.ordination,
           quotas.military, quotas.maternity, quotas.sterilization, quotas.paternity

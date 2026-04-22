@@ -1,4 +1,4 @@
-import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord } from './types';
+import { LeaveRequest, Notification, User, UserRole, LeaveStatus, LeaveType, LeaveTypeDefinition, Gender, AttendanceRecord, TimesheetEntry, TimesheetProject, TimesheetTaskTypeDefinition } from './types';
 import { HOLIDAYS_2026 } from './constants';
 import { parseConnexCSV, thaiDateToISODate } from './connexSeed';
 import * as api from './api';
@@ -39,7 +39,33 @@ const STORAGE_KEYS = {
   USERS: 'hr_users_list',
   HOLIDAYS: 'hr_company_holidays',
   ATTENDANCE: 'hr_attendance_records',
+  TIMESHEET_PROJECTS: 'hr_timesheet_projects',
+  TIMESHEET_ENTRIES: 'hr_timesheet_entries',
+  TIMESHEET_TASK_TYPES: 'hr_timesheet_task_types',
   LEAVE_TYPES: 'hr_leave_types',
+  ATTENDANCE_LATE_POLICY: 'hr_attendance_late_policy',
+};
+
+const DEFAULT_TIMESHEET_TASK_TYPES: TimesheetTaskTypeDefinition[] = [
+  { id: 'research', label: 'Research', order: 1, isActive: true },
+  { id: 'coding', label: 'Coding', order: 2, isActive: true },
+  { id: 'testing', label: 'Testing', order: 3, isActive: true },
+  { id: 'bug-fixing', label: 'Bug Fixing', order: 4, isActive: true },
+  { id: 'planning', label: 'Planning', order: 5, isActive: true },
+];
+
+export interface AttendanceLatePolicy {
+  tiers: Array<{
+    after: string; // HH:mm:ss
+    penalty: number; // day
+  }>;
+}
+
+const DEFAULT_ATTENDANCE_LATE_POLICY: AttendanceLatePolicy = {
+  tiers: [
+    { after: '09:30:00', penalty: 0.25 },
+    { after: '10:00:00', penalty: 0.5 },
+  ],
 };
 
 /** ถ้ามีค่า = ใช้ Backend API (Supabase) — อ่าน/เขียนจาก DB แทน localStorage (ใช้ getApiBase จาก api เพื่อให้ fallback โดเมน Backend ทำงาน) */
@@ -50,6 +76,207 @@ let _leaveTypesCache: LeaveTypeDefinition[] | null = null;
 let _holidaysCache: Record<string, string> | null = null;
 const _attendanceCache = new Map<string, AttendanceRecord[]>();
 const _notificationsCache = new Map<string, Notification[]>();
+let _timesheetTaskTypesCache: TimesheetTaskTypeDefinition[] | null = null;
+let _timesheetProjectsCache: TimesheetProject[] | null = null;
+let _timesheetEntriesCache: TimesheetEntry[] | null = null;
+
+function getLocalTimesheetTaskTypes(): TimesheetTaskTypeDefinition[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+    .sort((a, b) => a.order - b.order);
+  return normalized.length > 0 ? normalized : DEFAULT_TIMESHEET_TASK_TYPES;
+}
+
+function getLocalTimesheetProjects(): TimesheetProject[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_PROJECTS);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetProject)
+    .filter((x): x is TimesheetProject => x !== null);
+}
+
+function getLocalTimesheetEntries(): TimesheetEntry[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_ENTRIES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetEntry)
+    .filter((x): x is TimesheetEntry => x !== null)
+    .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+}
+
+async function migrateLocalTimesheetToApiIfNeeded(apiTaskTypes: TimesheetTaskTypeDefinition[], apiProjects: TimesheetProject[], apiEntries: TimesheetEntry[]): Promise<void> {
+  if (!isApiMode()) return;
+  const localTaskTypes = getLocalTimesheetTaskTypes();
+  const localProjects = getLocalTimesheetProjects();
+  const localEntries = getLocalTimesheetEntries();
+
+  const shouldMigrateTaskTypes = localTaskTypes.length > 0;
+  const shouldMigrateProjects = localProjects.length > 0;
+  const shouldMigrateEntries = localEntries.length > 0;
+
+  if (!shouldMigrateTaskTypes && !shouldMigrateProjects && !shouldMigrateEntries) return;
+
+  try {
+    const apiTaskMap = new Map(apiTaskTypes.map((t) => [t.id, t]));
+    const apiProjectMap = new Map(apiProjects.map((p) => [p.id, p]));
+    const apiEntryMap = new Map(apiEntries.map((e) => [`${e.userId}|${e.date}|${e.projectId}|${e.taskType}`, e]));
+
+    if (shouldMigrateTaskTypes) {
+      const changedTaskTypes = localTaskTypes.filter((t) => {
+        const existing = apiTaskMap.get(t.id);
+        return !existing || existing.label !== t.label || existing.order !== t.order || existing.isActive !== t.isActive;
+      });
+      if (changedTaskTypes.length > 0) {
+        await api.putTimesheetTaskTypes(localTaskTypes as unknown as Record<string, unknown>[]);
+      }
+    }
+    if (shouldMigrateProjects) {
+      const changedProjects = localProjects.filter((p) => {
+        const existing = apiProjectMap.get(p.id);
+        if (!existing) return true;
+        const aUsers = [...p.assignedUserIds].sort().join(',');
+        const bUsers = [...existing.assignedUserIds].sort().join(',');
+        const aTargets = JSON.stringify(p.taskTargetDays);
+        const bTargets = JSON.stringify(existing.taskTargetDays);
+        return (
+          p.code !== existing.code ||
+          p.name !== existing.name ||
+          p.projectManagerId !== existing.projectManagerId ||
+          p.isActive !== existing.isActive ||
+          aUsers !== bUsers ||
+          aTargets !== bTargets
+        );
+      });
+      if (changedProjects.length > 0) {
+        await Promise.all(changedProjects.map((p) => api.postTimesheetProject(p as unknown as Record<string, unknown>)));
+      }
+    }
+    if (shouldMigrateEntries) {
+      const changedEntries = localEntries.filter((e) => {
+        const key = `${e.userId}|${e.date}|${e.projectId}|${e.taskType}`;
+        const existing = apiEntryMap.get(key);
+        if (!existing) return true;
+        return existing.minutes !== e.minutes;
+      });
+      if (changedEntries.length > 0) {
+        await Promise.all(changedEntries.map((e) => api.postTimesheetEntry(e)));
+      }
+    }
+    const [tasksRes, projectsRes, entriesRes] = await Promise.all([
+      api.getTimesheetTaskTypes(),
+      api.getTimesheetProjects(),
+      api.getTimesheetEntries(),
+    ]);
+    _timesheetTaskTypesCache = toArray(tasksRes as Record<string, unknown>[])
+      .map(normalizeTimesheetTaskType)
+      .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+      .sort((a, b) => a.order - b.order);
+    _timesheetProjectsCache = toArray(projectsRes as Record<string, unknown>[])
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+    _timesheetEntriesCache = toArray(entriesRes as Record<string, unknown>[])
+      .map(normalizeTimesheetEntry)
+      .filter((x): x is TimesheetEntry => x !== null)
+      .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+    console.log('[timesheet-migrate] localStorage data synced to API');
+  } catch (err) {
+    console.error('[timesheet-migrate] migration failed:', err);
+  }
+}
+
+function normalizeAttendanceLatePolicy(raw: unknown): AttendanceLatePolicy {
+  const normalizeTime = (v: unknown, fallback: string): string => {
+    const s = String(v ?? '').trim();
+    if (/^\d{2}:\d{2}$/.test(s)) return `${s}:00`;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s;
+    return fallback;
+  };
+  const normalizePenalty = (v: unknown, fallback: number): number => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.min(12, n);
+  };
+  const sortByAfter = (list: Array<{ after: string; penalty: number }>) =>
+    [...list].sort((a, b) => a.after.localeCompare(b.after));
+
+  if (!raw || typeof raw !== 'object') return DEFAULT_ATTENDANCE_LATE_POLICY;
+  const o = raw as Record<string, unknown>;
+
+  const tiersRaw = Array.isArray(o.tiers) ? o.tiers : [];
+  const normalizedTiers = tiersRaw
+    .filter((x) => x && typeof x === 'object')
+    .map((x) => {
+      const t = x as Record<string, unknown>;
+      return {
+        after: normalizeTime(t.after, '09:30:00'),
+        penalty: normalizePenalty(t.penalty, 0.25),
+      };
+    })
+    .filter((t) => !!t.after);
+
+  if (normalizedTiers.length > 0) {
+    return { tiers: sortByAfter(normalizedTiers) };
+  }
+
+  // backward compatibility with old shape
+  const lateAfter = normalizeTime(o.lateAfter, '09:30:00');
+  const severeLateAfter = normalizeTime(o.severeLateAfter, '10:00:00');
+  const penaltyNormal = normalizePenalty(o.penaltyNormal, 0.25);
+  const penaltySevere = normalizePenalty(o.penaltySevere, 0.5);
+  return {
+    tiers: sortByAfter([
+      { after: lateAfter, penalty: penaltyNormal },
+      { after: severeLateAfter, penalty: penaltySevere },
+    ]),
+  };
+}
+
+export function getAttendanceLatePolicy(): AttendanceLatePolicy {
+  const stored = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_LATE_POLICY);
+  const parsed = safeJsonParse<AttendanceLatePolicy | null>(stored, null);
+  return normalizeAttendanceLatePolicy(parsed);
+}
+
+export function saveAttendanceLatePolicy(policy: AttendanceLatePolicy): void {
+  const normalized = normalizeAttendanceLatePolicy(policy);
+  localStorage.setItem(STORAGE_KEYS.ATTENDANCE_LATE_POLICY, JSON.stringify(normalized));
+}
+
+function toTimeSeconds(raw?: string): number | null {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  const m = text.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  const ss = Number(m[3] ?? '0');
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) return null;
+  return (hh * 3600) + (mm * 60) + ss;
+}
+
+export function calculateLatePenaltyDays(checkIn?: string): number {
+  const policy = getAttendanceLatePolicy();
+  const checkInSec = toTimeSeconds(checkIn);
+  if (checkInSec == null) return 0;
+  let penalty = 0;
+  for (const tier of policy.tiers) {
+    const tierSec = toTimeSeconds(tier.after);
+    if (tierSec != null && checkInSec > tierSec) penalty = tier.penalty;
+  }
+  return penalty;
+}
+
+export function getLateThresholdTime(): string {
+  const policy = getAttendanceLatePolicy();
+  return policy.tiers[0]?.after || DEFAULT_ATTENDANCE_LATE_POLICY.tiers[0].after;
+}
 
 /** แปลง quota keys จาก lowercase (จาก backend) เป็น UPPERCASE (ตาม LeaveTypeId ที่ frontend ใช้)
  *  Backend คืน { sick: 30, vacation: 12 } แต่ frontend ใช้ user.quotas['SICK'], user.quotas['VACATION']
@@ -89,19 +316,57 @@ export function normalizeUserId(raw: unknown): string {
   return s;
 }
 
-function normalizeUser(u: Record<string, unknown>): User {
+/** ชื่อตำแหน่งตามรหัสพนักงาน (ต้นแบบเดียวกับ migration 008) — ใช้เมื่อ DB ยังเก็บ position ซ้ำกับ department */
+const CANONICAL_POSITION_BY_USER_ID: Record<string, string> = {
+  '001': 'Managing Director',
+  '002': 'Software Development Manager',
+  '003': 'Financial Director',
+  '004': 'Project Manager',
+  '005': 'Project Manager',
+  '008': 'แม่บ้าน',
+  '011': 'System Analyst',
+  '012': 'Business Analyst',
+  '013': 'Senior System Analyst',
+  '017': 'Senior Programmer',
+  '020': 'Quality Assurance',
+  '021': 'Brand Strategic Manager',
+  '023': 'Creative Designer',
+  '025': 'Quality Assurance',
+  '026': 'Programmer',
+  '027': 'Sale Executive',
+  '028': 'Programmer',
+};
+
+export function normalizeUser(u: Record<string, unknown>): User {
   const rawQuotas = (u.quotas && typeof u.quotas === 'object') ? (u.quotas as Record<string, unknown>) : {};
+  const department = String(u.department ?? '').trim();
+  let position = String(u.position ?? u.jobTitle ?? '').trim();
+  const id = normalizeUserId(u.id ?? '');
+  const canonical = CANONICAL_POSITION_BY_USER_ID[id];
+  if (canonical && (!position || position === department)) {
+    position = canonical;
+  }
   return {
-    id: normalizeUserId(u.id ?? ''),
+    id,
     name: String(u.name ?? ''),
     email: String(u.email ?? ''),
     password: '',
     role: (u.role as UserRole) ?? UserRole.EMPLOYEE,
     gender: (u.gender as Gender) ?? 'male',
-    department: String(u.department ?? ''),
+    position,
+    department,
     joinDate: String(u.joinDate ?? u.join_date ?? ''),
+    isResigned: u.isResigned === true || u.is_resigned === true,
+    resignedDate: String(u.resignedDate ?? u.resigned_date ?? ''),
     managerId: u.managerId != null ? normalizeUserId(u.managerId) : (u.manager_id != null ? normalizeUserId(u.manager_id) : undefined),
     quotas: normalizeQuotaKeys(rawQuotas),
+    isSuspended: u.isSuspended === true || u.is_suspended === true,
+    failedLoginAttempts: u.failedLoginAttempts != null
+      ? Number(u.failedLoginAttempts) || 0
+      : (u.failed_login_attempts != null ? Number(u.failed_login_attempts) || 0 : 0),
+    updatedAt: u.updatedAt != null ? String(u.updatedAt) : (u.updated_at != null ? String(u.updated_at) : undefined),
+    updatedById: u.updatedById != null ? normalizeUserId(u.updatedById) : (u.updated_by != null ? normalizeUserId(u.updated_by) : undefined),
+    updatedByName: u.updatedByName != null ? String(u.updatedByName) : (u.updated_by_name != null ? String(u.updated_by_name) : undefined),
   };
 }
 /**
@@ -150,6 +415,9 @@ function normalizeLeaveType(t: Record<string, unknown>): LeaveTypeDefinition {
     defaultQuota: t.defaultQuota != null ? Number(t.defaultQuota) : (t.default_quota != null ? Number(t.default_quota) : (initial?.defaultQuota ?? 0)),
     order: t.order != null ? Number(t.order) : (initial?.order ?? 0),
     isActive: t.isActive !== false && t.is_active !== false,
+    updatedAt: t.updatedAt != null ? String(t.updatedAt) : (t.updated_at != null ? String(t.updated_at) : undefined),
+    updatedById: t.updatedById != null ? normalizeUserId(t.updatedById) : (t.updated_by != null ? normalizeUserId(t.updated_by) : undefined),
+    updatedByName: t.updatedByName != null ? String(t.updatedByName) : (t.updated_by_name != null ? String(t.updated_by_name) : undefined),
   };
 }
 function normalizeNotification(n: Record<string, unknown>): Notification {
@@ -165,8 +433,11 @@ function normalizeNotification(n: Record<string, unknown>): Notification {
 function normalizeAttendance(r: Record<string, unknown>): AttendanceRecord {
   const checkIn = r.checkIn != null ? String(r.checkIn).slice(0, 8) : (r.check_in != null ? String(r.check_in).slice(0, 8) : undefined);
   const checkOut = r.checkOut != null ? String(r.checkOut).slice(0, 8) : (r.check_out != null ? String(r.check_out).slice(0, 8) : undefined);
-  // Backend ไม่คืน isLate — derive จาก checkIn > 09:30:00
-  const isLate = r.isLate === true || r.is_late === true || (typeof checkIn === 'string' && checkIn > '09:30:00');
+  const lateThreshold = getLateThresholdTime();
+  // ยึด policy ปัจจุบันเมื่อมี checkIn; ถ้าไม่มี checkIn ค่อย fallback ค่า isLate จาก backend
+  const isLate = typeof checkIn === 'string'
+    ? checkIn > lateThreshold
+    : (r.isLate === true || r.is_late === true);
   return {
     id: String(r.id),
     userId: normalizeUserId(r.userId ?? r.user_id),
@@ -219,15 +490,20 @@ function normalizeHolidaysResponse(raw: unknown): Record<string, string> {
 /** โหลดข้อมูลจาก API (เรียกเมื่อเปิดแอปในโหมด Supabase) — รองรับ multi-user */
 export async function loadFromApi(): Promise<void> {
   if (!isApiMode()) return;
-  const [usersRes, typesRes, requestsRes, holidaysRes] = await Promise.allSettled([
+  const [usersRes, typesRes, requestsRes, holidaysRes, tsTasksRes, tsProjectsRes, tsEntriesRes] = await Promise.allSettled([
     api.getUsers(),
     api.getLeaveTypes(),
     api.getLeaveRequests(),
     api.getHolidays(),
+    api.getTimesheetTaskTypes(),
+    api.getTimesheetProjects(),
+    api.getTimesheetEntries(),
   ]);
 
   if (usersRes.status === 'rejected') {
     console.error('[loadFromApi] getUsers failed:', usersRes.reason);
+    // If API requires auth (not logged in yet), keep demo users available from localStorage.
+    invalidateUsersCache();
   } else {
     const users = toArray(usersRes.value as Record<string, unknown>[]).map(normalizeUser);
     setUsersCache(users);
@@ -250,15 +526,47 @@ export async function loadFromApi(): Promise<void> {
   } else if (holidaysRes.status === 'fulfilled') {
     _holidaysCache = normalizeHolidaysResponse(holidaysRes.value as Record<string, unknown>);
   }
+  if (tsTasksRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetTaskTypes failed:', tsTasksRes.reason);
+  } else {
+    const list = toArray(tsTasksRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetTaskType)
+      .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+      .sort((a, b) => a.order - b.order);
+    _timesheetTaskTypesCache = list.length > 0 ? list : DEFAULT_TIMESHEET_TASK_TYPES;
+  }
+  if (tsProjectsRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetProjects failed:', tsProjectsRes.reason);
+  } else {
+    _timesheetProjectsCache = toArray(tsProjectsRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+  }
+  if (tsEntriesRes.status === 'rejected') {
+    console.error('[loadFromApi] getTimesheetEntries failed:', tsEntriesRes.reason);
+  } else {
+    _timesheetEntriesCache = toArray(tsEntriesRes.value as Record<string, unknown>[])
+      .map(normalizeTimesheetEntry)
+      .filter((x): x is TimesheetEntry => x !== null)
+      .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+  }
+  await migrateLocalTimesheetToApiIfNeeded(
+    _timesheetTaskTypesCache ?? [],
+    _timesheetProjectsCache ?? [],
+    _timesheetEntriesCache ?? []
+  );
 }
 
 export async function loadAttendanceForUser(userId: string): Promise<void> {
   if (!isApiMode()) return;
+  const uid = normalizeUserId(userId);
+  const prev = _attendanceCache.get(uid) ?? [];
   try {
-    const res = await api.getAttendance(userId);
-    _attendanceCache.set(userId, (res as Record<string, unknown>[]).map(normalizeAttendance));
+    const res = await api.getAttendance(uid);
+    _attendanceCache.set(uid, (res as Record<string, unknown>[]).map(normalizeAttendance));
   } catch {
-    _attendanceCache.set(userId, []);
+    // Keep last known data to avoid random row count drops on transient API errors.
+    _attendanceCache.set(uid, prev);
   }
 }
 
@@ -312,7 +620,10 @@ function normalizeLeaveTypeList(list: LeaveTypeDefinition[]): LeaveTypeDefinitio
 }
 
 export const getLeaveTypes = (): LeaveTypeDefinition[] => {
-  if (isApiMode() && _leaveTypesCache) return _leaveTypesCache; // cache ผ่าน normalizeLeaveType แล้ว (uppercase)
+  // โหมด API: ใช้เฉพาะ cache จากเซิร์ฟเวอร์ (หรือชุดตั้งต้นก่อนโหลด) — ห้ามอ่าน localStorage แทน DB จะได้ไม่ merge ผิดชุด
+  if (isApiMode()) {
+    return _leaveTypesCache ?? INITIAL_LEAVE_TYPES;
+  }
   const stored = localStorage.getItem(STORAGE_KEYS.LEAVE_TYPES);
   if (!stored) {
     localStorage.setItem(STORAGE_KEYS.LEAVE_TYPES, JSON.stringify(INITIAL_LEAVE_TYPES));
@@ -329,10 +640,9 @@ export const saveLeaveTypes = (types: LeaveTypeDefinition[]): void | Promise<voi
     const deduped = normalizeLeaveTypeList(types);
     const promise = api.putLeaveTypes(deduped as unknown as Record<string, unknown>[])
       .then((res) => {
-        const list = (res as Record<string, unknown>[]).map(normalizeLeaveType);
+        const list = toArray(res).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
-      })
-      .catch(() => {});
+      });
     return promise as Promise<void>;
   }
   const deduped = normalizeLeaveTypeList(types);
@@ -347,6 +657,21 @@ export const getLeaveTypesForGender = (gender: Gender): LeaveTypeDefinition[] =>
 };
 
 export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): LeaveTypeDefinition | Promise<LeaveTypeDefinition> => {
+  if (isApiMode()) {
+    return api.getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const maxOrder = normalized.length ? Math.max(...normalized.map(t => t.order)) : 0;
+        const id = 'LT' + Date.now();
+        const newType: LeaveTypeDefinition = { ...data, id, order: maxOrder + 1 };
+        return api.putLeaveTypes([...normalized, newType] as unknown as Record<string, unknown>[]).then((raw) => {
+          const out = toArray(raw).map(normalizeLeaveType);
+          _leaveTypesCache = normalizeLeaveTypeList(out);
+          return newType;
+        });
+      });
+  }
   const types = getLeaveTypes();
   const maxOrder = types.length ? Math.max(...types.map(t => t.order)) : 0;
   const id = 'LT' + Date.now();
@@ -359,14 +684,72 @@ export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): L
 };
 
 export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>): void | Promise<void> => {
+  if (isApiMode()) {
+    const targetId = String(id || '').trim().toUpperCase();
+    // ดึงรายการล่าสุดจาก API ก่อน merge — หลีกเลี่ยงการ PUT จาก snapshot ที่มาจาก localStorage/ค่าเก่า
+    return api.getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
+        if (idx < 0) {
+          throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
+        }
+        const next = [...normalized];
+        next[idx] = {
+          ...next[idx],
+          ...data,
+          id: next[idx].id,
+        };
+        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
+      })
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
   const updated = types.map(t => t.id === id ? { ...t, ...data } : t);
   return saveLeaveTypes(updated);
 };
 
-export const deleteLeaveType = (id: string): void | Promise<void> => {
+export const setLeaveTypeActive = (id: string, active: boolean): void | Promise<void> => {
+  const targetId = String(id || '').toUpperCase();
+  if (isApiMode()) {
+    return api
+      .getLeaveTypes()
+      .then((res) => {
+        const list = toArray(res).map(normalizeLeaveType);
+        const normalized = normalizeLeaveTypeList(list);
+        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
+        if (idx < 0) throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
+        const next = [...normalized];
+        next[idx] = { ...next[idx], isActive: active };
+        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
+      })
+      .then((raw) => {
+        const list = toArray(raw).map(normalizeLeaveType);
+        _leaveTypesCache = normalizeLeaveTypeList(list);
+      }) as Promise<void>;
+  }
   const types = getLeaveTypes();
-  return saveLeaveTypes(types.map(t => t.id === id ? { ...t, isActive: false } : t));
+  return saveLeaveTypes(
+    types.map((t) => (String(t.id || '').toUpperCase() === targetId ? { ...t, isActive: active } : t))
+  );
+};
+
+export const deleteLeaveType = (id: string): void | Promise<void> => {
+  const targetId = String(id ?? '').trim();
+  if (!targetId) return;
+  if (isApiMode()) {
+    return api.deleteLeaveType(targetId).then((res) => {
+      const list = toArray(res).map(normalizeLeaveType);
+      _leaveTypesCache = normalizeLeaveTypeList(list);
+    }) as Promise<void>;
+  }
+  const types = getLeaveTypes().filter((t) => String(t.id).toUpperCase() !== targetId.toUpperCase());
+  if (types.length === getLeaveTypes().length) return;
+  return saveLeaveTypes(types);
 };
 
 export const getDefaultQuotaForLeaveType = (leaveTypeId: string): number => {
@@ -391,7 +774,10 @@ function buildInitialUsersFromConnex(): User[] {
       password: row.password,
       role,
       gender,
-      department: row.position,
+      // CSV มี Position เป็น "ชื่อตำแหน่ง" จริง (เช่น Senior System Analyst)
+      position: row.position,
+      // CSV ไม่มีคอลัมน์ Department/แผนก — ให้เริ่มเป็นค่าว่าง แล้ว Admin กรอกเองภายหลัง
+      department: '',
       joinDate,
       managerId,
       quotas: getInitialQuotasForGender(gender),
@@ -410,9 +796,11 @@ function inferGenderFromName(name: string): Gender {
 function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const u of users) {
-    const mid = u.managerId ?? '';
+    const mid = normalizeUserId(u.managerId ?? '');
+    const uid = normalizeUserId(u.id);
+    if (!uid) continue;
     if (!map.has(mid)) map.set(mid, []);
-    map.get(mid)!.push(u.id);
+    map.get(mid)!.push(uid);
   }
   return map;
 }
@@ -420,12 +808,17 @@ function buildManagerToChildrenMap(users: User[]): Map<string, string[]> {
 /** รายชื่อ id พนักงานทั้งหมดในสายงาน (รวมลูกทีมของลูกทีม) — O(n) ด้วย BFS จาก map ที่สร้างครั้งเดียว */
 export function getSubordinateIdsRecursive(managerId: string, users: User[]): string[] {
   if (users.length === 0) return [];
+  const managerIdNorm = normalizeUserId(managerId);
+  if (!managerIdNorm) return [];
   const map = buildManagerToChildrenMap(users);
   const result: string[] = [];
-  const queue: string[] = map.get(managerId) ?? [];
+  const queue: string[] = [...(map.get(managerIdNorm) ?? [])];
+  const visited = new Set<string>();
   let i = 0;
   while (i < queue.length) {
-    const id = queue[i++];
+    const id = normalizeUserId(queue[i++]);
+    if (!id || id === managerIdNorm || visited.has(id)) continue;
+    visited.add(id);
     result.push(id);
     const children = map.get(id);
     if (children) for (const c of children) queue.push(c);
@@ -465,10 +858,20 @@ export const getAllUsers = (): User[] => {
     setUsersCache(INITIAL_USERS);
     return INITIAL_USERS;
   }
+  // ถ้าข้อมูลใน localStorage ถูกล้าง/กลายเป็น array ว่าง ให้ fallback ไปใช้รายชื่อ demo ตั้งต้น
+  // เพื่อไม่ให้หน้า Login (Demo Access) ว่างเปล่า
+  if (parsed.length === 0) {
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
+    setUsersCache(INITIAL_USERS);
+    return INITIAL_USERS;
+  }
   const normalized = parsed.map(u => ({
     ...u,
     gender: u.gender ?? inferGenderFromName(u.name),
+    position: (u as User).position ?? u.department ?? '',
     quotas: typeof u.quotas === 'object' && u.quotas !== null ? u.quotas : buildQuotasFromLeaveTypes(u.gender ?? inferGenderFromName(u.name)),
+    isSuspended: (u as User).isSuspended === true,
+    failedLoginAttempts: (u as User).failedLoginAttempts != null ? Number((u as User).failedLoginAttempts) || 0 : 0,
   }));
   setUsersCache(normalized);
   return normalized;
@@ -476,14 +879,56 @@ export const getAllUsers = (): User[] => {
 
 export const updateUser = (updatedUser: User): void | Promise<void> => {
   if (isApiMode()) {
-    const body = { ...updatedUser } as Record<string, unknown>;
+    const toApiQuotas = (raw: unknown): Record<string, number> => {
+      if (!raw || typeof raw !== 'object') return {};
+      const src = raw as Record<string, unknown>;
+      const out: Record<string, number> = {};
+      for (const [key, value] of Object.entries(src)) {
+        const n = Number(value);
+        out[key.toLowerCase()] = Number.isFinite(n) ? n : 0;
+      }
+      return out;
+    };
+    const body = {
+      ...updatedUser,
+      quotas: toApiQuotas(updatedUser.quotas),
+    } as Record<string, unknown>;
     if (body.password === '') delete body.password;
+
+    // Optimistic update: reflect changes immediately in cache
+    const prev = getAllUsers();
+    const optimistic = prev.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+    setUsersCache(optimistic);
+
     const promise = api.putUser(updatedUser.id, body)
-      .then(() => api.getUsers())
-      .then((res) => {
-        setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
+      .then((savedRow) => {
+        const savedUser = normalizeUser(savedRow as Record<string, unknown>);
+        return api.getUsers()
+          .then((res) => {
+            const normalized = (res as Record<string, unknown>[]).map(normalizeUser);
+            const merged = normalized.map((u) => {
+              if (u.id !== savedUser.id) return u;
+              return {
+                ...u,
+                // Keep fresh audit fields from PUT response when list endpoint omits them.
+                updatedAt: savedUser.updatedAt ?? u.updatedAt,
+                updatedById: savedUser.updatedById ?? u.updatedById,
+                updatedByName: savedUser.updatedByName ?? u.updatedByName,
+              };
+            });
+            setUsersCache(merged);
+          })
+          .catch(() => {
+            const merged = prev.map((u) => (u.id === savedUser.id ? { ...u, ...savedUser } : u));
+            setUsersCache(merged);
+          });
       })
-      .catch(() => {});
+      .catch((err) => {
+        // rollback
+        setUsersCache(prev);
+        throw err;
+      });
+
     const current = getInitialUser();
     if (current && current.id === updatedUser.id) saveCurrentUser(updatedUser);
     return promise as Promise<void>;
@@ -503,17 +948,36 @@ function generateNextUserId(users: User[]): string {
   return String(next).padStart(3, '0');
 }
 
-export const addUser = (data: Omit<User, 'id'>): User => {
+export const addUser = (data: Omit<User, 'id'>): User | Promise<User> => {
   const users = getAllUsers();
   const id = generateNextUserId(users);
   const quotas = data.quotas && Object.keys(data.quotas).length > 0 ? data.quotas : buildQuotasFromLeaveTypes(data.gender);
   const newUser: User = { ...data, id, quotas };
   if (isApiMode()) {
-    const body = { id, ...newUser, password: (data as User).password || 'changeme', joinDate: newUser.joinDate };
-    api.postUser(body as unknown as Record<string, unknown>).then(() => api.getUsers()).then((res) => {
-      setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
-    }).catch(() => {});
-    return newUser;
+    const toApiQuotas = (raw: unknown): Record<string, number> => {
+      if (!raw || typeof raw !== 'object') return {};
+      const src = raw as Record<string, unknown>;
+      const out: Record<string, number> = {};
+      for (const [key, value] of Object.entries(src)) {
+        const n = Number(value);
+        out[key.toLowerCase()] = Number.isFinite(n) ? n : 0;
+      }
+      return out;
+    };
+    const body = {
+      id,
+      ...newUser,
+      quotas: toApiQuotas(newUser.quotas),
+      password: (data as User).password || 'changeme',
+      joinDate: newUser.joinDate,
+    };
+    return api.postUser(body as unknown as Record<string, unknown>)
+      .then(() => api.getUsers())
+      .then((res) => {
+        const normalized = (res as Record<string, unknown>[]).map(normalizeUser);
+        setUsersCache(normalized);
+        return normalized.find((u) => u.id === id) ?? newUser;
+      });
   }
   const updated = [...users, newUser];
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
@@ -522,16 +986,19 @@ export const addUser = (data: Omit<User, 'id'>): User => {
 };
 
 /** ลบพนักงาน (เช่น ลาออก) — ถ้าเป็นผู้ใช้ที่ล็อกอินอยู่จะออกจากระบบ */
-export const deleteUser = (userId: string): boolean => {
+export const deleteUser = (userId: string): boolean | Promise<boolean> => {
   const users = getAllUsers();
   if (users.length <= 1) return false;
   if (isApiMode()) {
-    api.deleteUser(userId).then(() => api.getUsers()).then((res) => {
-      setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
-    }).catch(() => {});
     const current = getInitialUser();
     if (current?.id === userId) logoutUser();
-    return true;
+    return api.deleteUser(userId)
+      .then(() => api.getUsers())
+      .then((res) => {
+        setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
+        return true;
+      })
+      .catch(() => false);
   }
   const updated = users.filter(u => u.id !== userId);
   if (updated.length === users.length) return false;
@@ -576,25 +1043,285 @@ export const resetAllData = () => {
 
 // Attendance
 export const getAttendanceRecords = (userId?: string): AttendanceRecord[] => {
-  if (isApiMode() && userId) return _attendanceCache.get(userId) ?? [];
+  if (isApiMode() && userId) return _attendanceCache.get(normalizeUserId(userId)) ?? [];
   const stored = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
   const parsed = safeJsonParse<AttendanceRecord[]>(stored, []);
   const records = Array.isArray(parsed) ? parsed : [];
   return userId ? records.filter(r => r.userId === userId) : records;
 };
 
+function getLocalDateString(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeTimesheetTaskType(raw: unknown): TimesheetTaskTypeDefinition | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const label = String(o.label ?? '').trim();
+  if (!id || !label) return null;
+  const orderRaw = Number(o.order);
+  return {
+    id,
+    label,
+    order: Number.isFinite(orderRaw) ? orderRaw : 0,
+    isActive: o.isActive !== false,
+  };
+}
+
+export const getTimesheetTaskTypes = (): TimesheetTaskTypeDefinition[] => {
+  if (isApiMode() && _timesheetTaskTypesCache) return _timesheetTaskTypesCache;
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null);
+  if (normalized.length === 0) return DEFAULT_TIMESHEET_TASK_TYPES;
+  return normalized.sort((a, b) => a.order - b.order);
+};
+
+export const saveTimesheetTaskTypes = (types: TimesheetTaskTypeDefinition[]): void => {
+  const normalized = types
+    .map(normalizeTimesheetTaskType)
+    .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+    .sort((a, b) => a.order - b.order);
+  if (isApiMode()) {
+    _timesheetTaskTypesCache = normalized;
+    api.putTimesheetTaskTypes(normalized as unknown as Record<string, unknown>[])
+      .then((res) => {
+        const list = toArray(res as Record<string, unknown>[])
+          .map(normalizeTimesheetTaskType)
+          .filter((x): x is TimesheetTaskTypeDefinition => x !== null)
+          .sort((a, b) => a.order - b.order);
+        _timesheetTaskTypesCache = list.length > 0 ? list : normalized;
+      })
+      .catch((err) => console.error('[saveTimesheetTaskTypes] API failed:', err));
+  }
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_TASK_TYPES, JSON.stringify(normalized));
+};
+
+function sanitizeMinutes(v: number): number {
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.min(24 * 60, Math.round(v));
+}
+
+function normalizeTimesheetProject(raw: unknown): TimesheetProject | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const code = String(o.code ?? '').trim();
+  const name = String(o.name ?? '').trim();
+  const managerId = normalizeUserId(o.projectManagerId ?? o.project_manager_id ?? '');
+  if (!id || !code || !name || !managerId) return null;
+  const assignedRaw = Array.isArray(o.assignedUserIds) ? o.assignedUserIds : (Array.isArray(o.assigned_user_ids) ? o.assigned_user_ids : []);
+  const assignedUserIds = assignedRaw.map((x) => normalizeUserId(x)).filter(Boolean);
+  const taskDefs = getTimesheetTaskTypes().filter((t) => t.isActive);
+  const targetRaw = (o.taskTargetDays && typeof o.taskTargetDays === 'object')
+    ? (o.taskTargetDays as Record<string, unknown>)
+    : ((o.task_target_days && typeof o.task_target_days === 'object') ? (o.task_target_days as Record<string, unknown>) : {});
+  const taskTargetDays: Record<string, number> = {};
+  for (const task of taskDefs) {
+    const n = Number(targetRaw[task.id]);
+    taskTargetDays[task.id] = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  for (const [k, v] of Object.entries(targetRaw)) {
+    if (taskTargetDays[k] != null) continue;
+    const n = Number(v);
+    taskTargetDays[k] = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  return {
+    id,
+    code,
+    name,
+    taskTargetDays,
+    assignedUserIds: Array.from(new Set(assignedUserIds)),
+    projectManagerId: managerId,
+    isActive: o.isActive !== false,
+    updatedAt: o.updatedAt != null ? String(o.updatedAt) : (o.updated_at != null ? String(o.updated_at) : undefined),
+    updatedById: o.updatedById != null ? normalizeUserId(o.updatedById) : (o.updated_by != null ? normalizeUserId(o.updated_by) : undefined),
+    updatedByName: o.updatedByName != null ? String(o.updatedByName) : (o.updated_by_name != null ? String(o.updated_by_name) : undefined),
+  };
+}
+
+function normalizeTimesheetEntry(raw: unknown): TimesheetEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = String(o.id ?? '').trim();
+  const userId = normalizeUserId(o.userId ?? o.user_id ?? '');
+  const date = toDateOnly(o.date ?? o.entry_date ?? '');
+  const projectId = String(o.projectId ?? o.project_id ?? '').trim();
+  const taskType = String(o.taskType ?? o.task_type_id ?? '').trim();
+  if (!id || !userId || !date || !projectId || !taskType) return null;
+  return {
+    id,
+    userId,
+    date,
+    projectId,
+    taskType,
+    minutes: sanitizeMinutes(Number(o.minutes ?? 0)),
+    updatedAt: String(o.updatedAt ?? o.updated_at ?? new Date().toISOString()),
+  };
+}
+
+export const getTimesheetProjects = (): TimesheetProject[] => {
+  if (isApiMode() && _timesheetProjectsCache) return _timesheetProjectsCache;
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_PROJECTS);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  return list
+    .map(normalizeTimesheetProject)
+    .filter((x): x is TimesheetProject => x !== null);
+};
+
+export const saveTimesheetProjects = (projects: TimesheetProject[]): void => {
+  if (isApiMode()) {
+    const normalized = projects
+      .map(normalizeTimesheetProject)
+      .filter((x): x is TimesheetProject => x !== null);
+    _timesheetProjectsCache = normalized;
+  }
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_PROJECTS, JSON.stringify(projects));
+};
+
+export const upsertTimesheetProject = (project: TimesheetProject): TimesheetProject => {
+  const normalized = normalizeTimesheetProject(project);
+  if (!normalized) {
+    throw new Error('ข้อมูลโครงการไม่ถูกต้อง');
+  }
+  const projects = getTimesheetProjects();
+  const idx = projects.findIndex((p) => p.id === normalized.id);
+  if (idx >= 0) {
+    projects[idx] = normalized;
+  } else {
+    projects.push(normalized);
+  }
+  if (isApiMode()) {
+    _timesheetProjectsCache = projects;
+    api.postTimesheetProject(normalized as unknown as Record<string, unknown>)
+      .then((res) => {
+        const saved = normalizeTimesheetProject(res as Record<string, unknown>);
+        if (!saved) return;
+        const current = _timesheetProjectsCache ?? [];
+        const i = current.findIndex((p) => p.id === saved.id);
+        if (i >= 0) current[i] = saved;
+        else current.push(saved);
+        _timesheetProjectsCache = [...current];
+      })
+      .catch((err) => console.error('[upsertTimesheetProject] API failed:', err));
+  }
+  saveTimesheetProjects(projects);
+  return normalized;
+};
+
+export const getTimesheetEntries = (userId?: string): TimesheetEntry[] => {
+  if (isApiMode() && _timesheetEntriesCache) {
+    if (!userId) return _timesheetEntriesCache;
+    const uid = normalizeUserId(userId);
+    return _timesheetEntriesCache.filter((e) => normalizeUserId(e.userId) === uid);
+  }
+  const stored = localStorage.getItem(STORAGE_KEYS.TIMESHEET_ENTRIES);
+  const parsed = safeJsonParse<unknown[]>(stored, []);
+  const list = Array.isArray(parsed) ? parsed : [];
+  const normalized = list
+    .map(normalizeTimesheetEntry)
+    .filter((x): x is TimesheetEntry => x !== null)
+    .sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+  if (!userId) return normalized;
+  const uid = normalizeUserId(userId);
+  return normalized.filter((e) => normalizeUserId(e.userId) === uid);
+};
+
+export const getTimesheetProjectsForUser = (userId: string): TimesheetProject[] => {
+  const uid = normalizeUserId(userId);
+  return getTimesheetProjects().filter((p) => p.isActive && p.assignedUserIds.includes(uid));
+};
+
+export const saveTimesheetEntry = (payload: {
+  userId: string;
+  date: string;
+  projectId: string;
+  taskType: string;
+  minutes: number;
+}): TimesheetEntry => {
+  const userId = normalizeUserId(payload.userId);
+  const date = String(payload.date || '').trim();
+  const projectId = String(payload.projectId || '').trim();
+  const taskType = String(payload.taskType || '').trim();
+  const today = getLocalDateString(new Date());
+  if (!userId || !isValidDateString(date) || !projectId || !taskType) {
+    throw new Error('ข้อมูลลงเวลาไม่ถูกต้อง');
+  }
+  if (date > today) {
+    throw new Error('ไม่สามารถลง Timesheet ล่วงหน้าได้ (เลือกได้เฉพาะวันนี้หรือย้อนหลัง)');
+  }
+  const entries = getTimesheetEntries();
+  const minutes = sanitizeMinutes(payload.minutes);
+  const updatedAt = new Date().toISOString();
+  const sameIdx = entries.findIndex((e) =>
+    e.userId === userId &&
+    e.date === date &&
+    e.projectId === projectId &&
+    e.taskType === taskType
+  );
+  const next: TimesheetEntry = {
+    id: sameIdx >= 0 ? entries[sameIdx].id : Math.random().toString(36).substring(2, 11),
+    userId,
+    date,
+    projectId,
+    taskType,
+    minutes,
+    updatedAt,
+  };
+  if (sameIdx >= 0) {
+    entries[sameIdx] = next;
+  } else {
+    entries.unshift(next);
+  }
+  if (isApiMode()) {
+    _timesheetEntriesCache = entries;
+    api.postTimesheetEntry(next)
+      .then((res) => {
+        const saved = normalizeTimesheetEntry(res as Record<string, unknown>);
+        if (!saved) return;
+        const current = _timesheetEntriesCache ?? [];
+        const i = current.findIndex((e) =>
+          e.userId === saved.userId &&
+          e.date === saved.date &&
+          e.projectId === saved.projectId &&
+          e.taskType === saved.taskType
+        );
+        if (i >= 0) current[i] = saved;
+        else current.unshift(saved);
+        _timesheetEntriesCache = [...current].sort((a, b) => (a.date === b.date ? b.updatedAt.localeCompare(a.updatedAt) : b.date.localeCompare(a.date)));
+      })
+      .catch((err) => console.error('[saveTimesheetEntry] API failed:', err));
+  }
+  localStorage.setItem(STORAGE_KEYS.TIMESHEET_ENTRIES, JSON.stringify(entries));
+  return next;
+};
+
+export const getTimesheetEntriesByDate = (userId: string, date: string): TimesheetEntry[] => {
+  const uid = normalizeUserId(userId);
+  return getTimesheetEntries(uid).filter((e) => e.date === date);
+};
+
 export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRecord => {
   const records = getAttendanceRecords();
   const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
+  const dateStr = getLocalDateString(now);
   const timeStr = now.toLocaleTimeString('th-TH', { hour12: false });
   
   let record = records.find(r => r.userId === userId && r.date === dateStr);
   getAllUsers();
   const user = _usersByIdCache?.get(userId);
+  const lateThreshold = getLateThresholdTime();
 
   if (!record) {
-    const isLate = type === 'IN' && timeStr > "09:30:00";
+    const isLate = type === 'IN' && timeStr > lateThreshold;
     record = {
       id: Math.random().toString(36).substring(2, 11),
       userId,
@@ -606,15 +1333,16 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
     };
 
     if (isLate && user) {
+      const penaltyDays = calculateLatePenaltyDays(timeStr);
       const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
-      user.quotas['VACATION'] = Math.max(0, vac - 0.25);
+      user.quotas['VACATION'] = Math.max(0, vac - penaltyDays);
       updateUser(user);
       record.penaltyApplied = true;
       
       createNotification({
         userId,
         title: 'แจ้งเตือนการเข้างานสาย',
-        message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด 09:30 น. ระบบได้หักโควต้าลาพักร้อน 0.25 วันอัตโนมัติ`,
+        message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
       });
 
       // Notify Manager
@@ -622,48 +1350,59 @@ export const saveAttendance = (userId: string, type: 'IN' | 'OUT'): AttendanceRe
         createNotification({
           userId: user.managerId,
           title: 'แจ้งเตือนพนักงานเข้าสาย',
-          message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า 0.25 วัน)`,
+          message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า ${penaltyDays} วัน)`,
         });
       }
     }
     
     records.unshift(record);
   } else {
-    if (type === 'IN' && !record.checkIn) {
+    if (type === 'IN') {
+      // Allow rewriting today's check-in time when user presses IN again
       record.checkIn = timeStr;
-      record.isLate = timeStr > "09:30:00";
+      // Start a new IN/OUT cycle: clear prior checkout of the same day
+      record.checkOut = undefined;
+      record.isLate = timeStr > lateThreshold;
       if (record.isLate && !record.penaltyApplied && user) {
-         const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
-         user.quotas['VACATION'] = Math.max(0, vac - 0.25);
-         updateUser(user);
-         record.penaltyApplied = true;
-         createNotification({
-            userId,
-            title: 'แจ้งเตือนการเข้างานสาย',
-            message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด 09:30 น. ระบบได้หักโควต้าลาพักร้อน 0.25 วันอัตโนมัติ`,
+        const penaltyDays = calculateLatePenaltyDays(timeStr);
+        const vac = user.quotas['VACATION'] ?? getDefaultQuotaForLeaveType('VACATION');
+        user.quotas['VACATION'] = Math.max(0, vac - penaltyDays);
+        updateUser(user);
+        record.penaltyApplied = true;
+        createNotification({
+          userId,
+          title: 'แจ้งเตือนการเข้างานสาย',
+          message: `คุณเข้างานเวลา ${timeStr} ซึ่งเกินกำหนด ${lateThreshold.slice(0, 5)} น. ระบบได้หักโควต้าลาพักร้อน ${penaltyDays} วันอัตโนมัติ`,
+        });
+
+        if (user.managerId) {
+          createNotification({
+            userId: user.managerId,
+            title: 'แจ้งเตือนพนักงานเข้าสาย',
+            message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า ${penaltyDays} วัน)`,
           });
-          
-          if (user.managerId) {
-            createNotification({
-              userId: user.managerId,
-              title: 'แจ้งเตือนพนักงานเข้าสาย',
-              message: `${user.name} เข้างานสายเมื่อเวลา ${timeStr} (หักโควต้า 0.25 วัน)`,
-            });
-          }
+        }
       }
     } else if (type === 'OUT') {
+      // OUT can also be rewritten for today's record
       record.checkOut = timeStr;
     }
   }
 
   if (isApiMode()) {
-    const dateStrForApi = now.toISOString().split('T')[0];
     return api.postAttendance(userId, type)
       .then((data) => {
-        loadAttendanceForUser(userId);
-        const list = getAttendanceRecords(userId);
-        const updated = list.find(r => r.date === dateStrForApi);
-        return updated ?? record;
+        const updated = normalizeAttendance(data as Record<string, unknown>);
+        const current = _attendanceCache.get(userId) ?? [];
+        const idx = current.findIndex((r) => r.date === updated.date);
+        if (idx >= 0) {
+          const next = [...current];
+          next[idx] = { ...next[idx], ...updated };
+          _attendanceCache.set(userId, next);
+        } else {
+          _attendanceCache.set(userId, [updated, ...current]);
+        }
+        return updated;
       }) as Promise<AttendanceRecord>;
   }
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
