@@ -5,7 +5,7 @@ import { formatDisplayDateTime } from './utils';
 declare const __APP_BUILD_ISO__: string | undefined;
 
 /** เวอร์ชันระบบ — แสดงข้างชื่อ Leave Flow Pro (ปรับขึ้นเมื่อมีการแก้ไขโปรแกรม) */
-export const APP_VERSION = '4.0.3';
+export const APP_VERSION = '4.0.4';
 
 /** วันที่และเวลาที่ build/รัน dev ล่าสุด — รูปแบบ วว/ดด/ปปปป HH:MM น. (เช่น 21/04/2569 14:30 น.) */
 const buildIso =
