@@ -78,6 +78,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const [newDepartment, setNewDepartment] = useState('');
   const [newJoinDate, setNewJoinDate] = useState('');
   const [newManagerId, setNewManagerId] = useState('');
+  const [addEmployeeMissingFields, setAddEmployeeMissingFields] = useState<string[]>([]);
+  const [editEmployeeMissingFields, setEditEmployeeMissingFields] = useState<string[]>([]);
   const [showResignedOnly, setShowResignedOnly] = useState(false);
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
@@ -121,6 +123,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     setNewDepartment('');
     setNewJoinDate('');
     setNewManagerId('');
+    setAddEmployeeMissingFields([]);
   };
 
   const openAddEmployeeModal = () => {
@@ -294,6 +297,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
   const handleEdit = (user: User) => {
     setEditingUser({ ...user, quotas: { ...user.quotas } });
     setEditPassword('');
+    setEditEmployeeMissingFields([]);
   };
 
   const normalizeJoinDateForCalc = (joinDateRaw: string): string | null => {
@@ -405,6 +409,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
     };
   };
 
+  const getMissingEmployeeRequiredFields = (fields: {
+    name: string;
+    email: string;
+    password?: string;
+    position: string;
+    department: string;
+    joinDate: string;
+  }): string[] => {
+    const missing: string[] = [];
+    if (!fields.name.trim()) missing.push('ชื่อ-นามสกุล');
+    if (!fields.email.trim()) missing.push('อีเมล');
+    if (fields.password !== undefined && !fields.password.trim()) missing.push('รหัสผ่าน');
+    if (!fields.position.trim()) missing.push('ตำแหน่ง');
+    if (!fields.department.trim()) missing.push('แผนก');
+    if (!fields.joinDate.trim()) missing.push('วันเริ่มงาน');
+    return missing;
+  };
+
+  const getRequiredFieldInputClass = (missingFields: string[], fieldLabel: string): string =>
+    `w-full p-3 bg-gray-50 border-2 rounded-xl outline-none text-sm font-bold ${
+      missingFields.includes(fieldLabel)
+        ? 'border-rose-400 focus:border-rose-500'
+        : 'border-gray-100 focus:border-blue-500'
+    }`;
+
+  const showMissingEmployeeFieldsAlert = (missingFields: string[]): void => {
+    if (missingFields.length === 0) return;
+    showAlert(`กรุณากรอกข้อมูลที่จำเป็น: ${missingFields.join(', ')}`);
+  };
+
+  const clearMissingEmployeeField = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    fieldLabel: string,
+  ): void => {
+    setter((prev) => prev.filter((field) => field !== fieldLabel));
+  };
+
   const handleSave = () => {
     if (!editingUser) return;
     runAction('admin-save-user', async () => {
@@ -413,10 +454,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       const position = editingUser.position.trim();
       const department = editingUser.department.trim();
       const joinDate = String(editingUser.joinDate || '').trim();
-      if (!name || !email || !position || !department || !joinDate) {
-        showAlert('กรุณากรอกชื่อ อีเมล ตำแหน่ง แผนก และวันเริ่มงานให้ครบถ้วน');
+      const missingFields = getMissingEmployeeRequiredFields({
+        name,
+        email,
+        position,
+        department,
+        joinDate,
+      });
+      if (missingFields.length > 0) {
+        setEditEmployeeMissingFields(missingFields);
+        showMissingEmployeeFieldsAlert(missingFields);
         return;
       }
+      setEditEmployeeMissingFields([]);
       if (users.some((u) => u.id !== editingUser.id && u.email.toLowerCase() === email.toLowerCase())) {
         showAlert('อีเมลนี้มีในระบบแล้ว (ผู้ใช้อื่น)');
         return;
@@ -466,10 +516,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
       const password = newPassword.trim();
       const position = newPosition.trim();
       const department = newDepartment.trim();
-      if (!name || !email || !password || !position || !department || !newJoinDate) {
-        showAlert('กรุณากรอกชื่อ อีเมล รหัสผ่าน ตำแหน่ง แผนก และวันเริ่มงาน');
+      const missingFields = getMissingEmployeeRequiredFields({
+        name,
+        email,
+        password,
+        position,
+        department,
+        joinDate: String(newJoinDate || ''),
+      });
+      if (missingFields.length > 0) {
+        setAddEmployeeMissingFields(missingFields);
+        showMissingEmployeeFieldsAlert(missingFields);
         return;
       }
+      setAddEmployeeMissingFields([]);
       if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
         showAlert('อีเมลนี้มีในระบบแล้ว');
         return;
@@ -1901,19 +1961,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   ชื่อ-นามสกุล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.employeeName})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="นาย/นาง/นางสาว ..." className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={newName} onChange={(e) => { setNewName(e.target.value); clearMissingEmployeeField(setAddEmployeeMissingFields, 'ชื่อ-นามสกุล'); }} placeholder="นาย/นาง/นางสาว ..." className={getRequiredFieldInputClass(addEmployeeMissingFields, 'ชื่อ-นามสกุล')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   อีเมล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.email})
                 </label>
-                <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="email@company.com" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={newEmail} onChange={(e) => { setNewEmail(e.target.value); clearMissingEmployeeField(setAddEmployeeMissingFields, 'อีเมล'); }} placeholder="email@company.com" className={getRequiredFieldInputClass(addEmployeeMissingFields, 'อีเมล')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   รหัสผ่าน (ใช้เข้าสู่ระบบ) <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.password})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.password} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="รหัสผ่านเริ่มต้น" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.password} value={newPassword} onChange={(e) => { setNewPassword(e.target.value); clearMissingEmployeeField(setAddEmployeeMissingFields, 'รหัสผ่าน'); }} placeholder="รหัสผ่านเริ่มต้น" className={getRequiredFieldInputClass(addEmployeeMissingFields, 'รหัสผ่าน')} />
               </div>
                 <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1937,19 +1997,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   ตำแหน่ง <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.position})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={newPosition} onChange={(e) => setNewPosition(e.target.value)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={newPosition} onChange={(e) => { setNewPosition(e.target.value); clearMissingEmployeeField(setAddEmployeeMissingFields, 'ตำแหน่ง'); }} placeholder="เช่น Senior Developer" className={getRequiredFieldInputClass(addEmployeeMissingFields, 'ตำแหน่ง')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   แผนก <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.department})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={newDepartment} onChange={(e) => { setNewDepartment(e.target.value); clearMissingEmployeeField(setAddEmployeeMissingFields, 'แผนก'); }} placeholder="เช่น Finance" className={getRequiredFieldInputClass(addEmployeeMissingFields, 'แผนก')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   วันเริ่มงาน <span className="text-red-500">*</span>
                 </label>
-                <DatePicker value={newJoinDate} onChange={setNewJoinDate} label="" required />
+                <div className={`rounded-2xl ${addEmployeeMissingFields.includes('วันเริ่มงาน') ? 'ring-2 ring-rose-400' : ''}`}>
+                  <DatePicker value={newJoinDate} onChange={(v) => { setNewJoinDate(v); clearMissingEmployeeField(setAddEmployeeMissingFields, 'วันเริ่มงาน'); }} label="" required />
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">ผู้บังคับบัญชา</label>
@@ -1994,13 +2056,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   ชื่อ-นามสกุล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.employeeName})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={editingUser.name} onChange={(e) => setEditingUser(prev => prev ? { ...prev, name: e.target.value } : prev)} placeholder="นาย/นาง/นางสาว ..." className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.employeeName} value={editingUser.name} onChange={(e) => { setEditingUser(prev => prev ? { ...prev, name: e.target.value } : prev); clearMissingEmployeeField(setEditEmployeeMissingFields, 'ชื่อ-นามสกุล'); }} placeholder="นาย/นาง/นางสาว ..." className={getRequiredFieldInputClass(editEmployeeMissingFields, 'ชื่อ-นามสกุล')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   อีเมล <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.email})
                 </label>
-                <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={editingUser.email} onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : prev)} placeholder="email@company.com" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="email" required maxLength={FIELD_MAX_LENGTHS.email} value={editingUser.email} onChange={(e) => { setEditingUser(prev => prev ? { ...prev, email: e.target.value } : prev); clearMissingEmployeeField(setEditEmployeeMissingFields, 'อีเมล'); }} placeholder="email@company.com" className={getRequiredFieldInputClass(editEmployeeMissingFields, 'อีเมล')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">เปลี่ยนรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน) (Max Length = {FIELD_MAX_LENGTHS.password})</label>
@@ -2028,19 +2090,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   ตำแหน่ง <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.position})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={editingUser.position} onChange={(e) => setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev)} placeholder="เช่น Senior Developer" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.position} value={editingUser.position} onChange={(e) => { setEditingUser(prev => prev ? { ...prev, position: e.target.value } : prev); clearMissingEmployeeField(setEditEmployeeMissingFields, 'ตำแหน่ง'); }} placeholder="เช่น Senior Developer" className={getRequiredFieldInputClass(editEmployeeMissingFields, 'ตำแหน่ง')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   แผนก <span className="text-red-500">*</span> (Max Length = {FIELD_MAX_LENGTHS.department})
                 </label>
-                <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={editingUser.department} onChange={(e) => setEditingUser(prev => prev ? { ...prev, department: e.target.value } : prev)} placeholder="เช่น Finance" className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-xl outline-none focus:border-blue-500 text-sm font-bold" />
+                <input type="text" required maxLength={FIELD_MAX_LENGTHS.department} value={editingUser.department} onChange={(e) => { setEditingUser(prev => prev ? { ...prev, department: e.target.value } : prev); clearMissingEmployeeField(setEditEmployeeMissingFields, 'แผนก'); }} placeholder="เช่น Finance" className={getRequiredFieldInputClass(editEmployeeMissingFields, 'แผนก')} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-1 tracking-widest">
                   วันเริ่มงาน <span className="text-red-500">*</span>
                 </label>
-                <DatePicker value={editingUser.joinDate} onChange={(v) => setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev)} label="" required />
+                <div className={`rounded-2xl ${editEmployeeMissingFields.includes('วันเริ่มงาน') ? 'ring-2 ring-rose-400' : ''}`}>
+                  <DatePicker value={editingUser.joinDate} onChange={(v) => { setEditingUser(prev => prev ? { ...prev, joinDate: v } : prev); clearMissingEmployeeField(setEditEmployeeMissingFields, 'วันเริ่มงาน'); }} label="" required />
+                </div>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -2094,7 +2158,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onUserDeleted }) =
               <button type="button" onClick={handleSave} disabled={isActionBusy('admin-save-user')} aria-busy={isActionBusy('admin-save-user')} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition shadow-xl shadow-blue-50 disabled:opacity-50">
                 บันทึกการเปลี่ยนแปลง
               </button>
-              <button type="button" onClick={() => { setEditingUser(null); setEditPassword(''); }} className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black hover:bg-gray-200 transition">
+              <button type="button" onClick={() => { setEditingUser(null); setEditPassword(''); setEditEmployeeMissingFields([]); }} className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black hover:bg-gray-200 transition">
                 ยกเลิก
               </button>
             </div>
