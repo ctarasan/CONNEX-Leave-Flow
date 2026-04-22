@@ -171,7 +171,9 @@ router.post('/login', async (req, res) => {
     // Successful login: reset failed attempts.
     try {
       await pool.query(
-        `UPDATE users SET failed_login_attempts = 0, updated_at = NOW() WHERE id = $1`,
+        `UPDATE users
+         SET failed_login_attempts = 0
+         WHERE id = $1 AND COALESCE(failed_login_attempts, 0) <> 0`,
         [row.id]
       );
     } catch {
