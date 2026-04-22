@@ -16,6 +16,16 @@ a,
   cursor: progress !important;
 }
 
+.app-busy button,
+.app-busy a,
+.app-busy input,
+.app-busy select,
+.app-busy textarea,
+.app-busy [role="button"],
+.app-busy [role="link"] {
+  pointer-events: none !important;
+}
+
 button:disabled,
 [role="button"][aria-disabled="true"] {
   cursor: progress !important;

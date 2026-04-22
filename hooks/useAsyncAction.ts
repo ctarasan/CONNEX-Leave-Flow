@@ -16,7 +16,8 @@ export function useAsyncAction() {
   const [busyMap, setBusyMap] = useState<Record<string, boolean>>({});
 
   const runAction = useCallback(async <T,>(key: string, fn: () => Promise<T> | T): Promise<T | undefined> => {
-    if (busyMap[key]) return undefined;
+    // Global mutex: when any async action is running, block new actions system-wide.
+    if (globalBusyCount > 0 || busyMap[key]) return undefined;
     setBusyMap((prev) => ({ ...prev, [key]: true }));
     setGlobalBusy(true);
     try {
