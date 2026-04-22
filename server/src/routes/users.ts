@@ -125,8 +125,29 @@ async function runVacationQuotaRecalc(updatedBy: string | null, targetUserId: st
   return pool.query(VACATION_QUOTA_RECALC_SQL, [normalizeUserId(updatedBy), targetUserId]);
 }
 
+let userProfileAuditColumnsEnsured = false;
+async function ensureUserProfileAuditColumns(): Promise<void> {
+  if (userProfileAuditColumnsEnsured) return;
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_by TEXT`);
+  await pool.query(`
+    UPDATE users
+    SET profile_updated_at = COALESCE(profile_updated_at, updated_at),
+        profile_updated_by = COALESCE(NULLIF(TRIM(profile_updated_by), ''), NULLIF(TRIM(COALESCE(updated_by::text, '')), ''))
+    WHERE profile_updated_at IS NULL
+       OR profile_updated_by IS NULL
+       OR TRIM(COALESCE(profile_updated_by, '')) = ''
+  `);
+  userProfileAuditColumnsEnsured = true;
+}
+
 router.get('/', requireAuth, async (_req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
     const includeResignedRaw = String((_req.query?.includeResigned ?? '')).trim().toLowerCase();
     const includeResigned = includeResignedRaw === '1' || includeResignedRaw === 'true' || includeResignedRaw === 'yes';
     let rows: Record<string, unknown>[];
@@ -137,13 +158,13 @@ router.get('/', requireAuth, async (_req, res) => {
           u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
           COALESCE(u.is_resigned, FALSE) as "isResigned",
           COALESCE(u.resigned_date::text, '') as "resignedDate",
-          u.updated_at as "updatedAt",
-          u.updated_by as "updatedById",
+          COALESCE(u.profile_updated_at, u.updated_at) as "updatedAt",
+          COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), '')) as "updatedById",
           COALESCE(editor.name, '') as "updatedByName",
           COALESCE(u.is_suspended, FALSE) as "isSuspended",
           COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
         FROM users u
-        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('u.updated_by')}
+        LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql(`COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), ''))`)}
         WHERE ($1::boolean = TRUE OR COALESCE(u.is_resigned, FALSE) = FALSE)
         ORDER BY u.id`
       , [includeResigned]
@@ -226,6 +247,11 @@ router.get('/', requireAuth, async (_req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
     if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
     const { id, name, email, password, role = 'EMPLOYEE', gender, position = '', department = '', joinDate, managerId, quotas, isResigned, resignedDate } = req.body;
     if (!name || !email || !password || !gender || !joinDate) {
@@ -246,11 +272,11 @@ router.post('/', requireAuth, async (req, res) => {
     
     const ins = await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, gender, position, department, join_date, manager_id,
-        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, is_resigned, resigned_date, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        sick_quota, personal_quota, vacation_quota, ordination_quota, military_quota, maternity_quota, sterilization_quota, paternity_quota, is_resigned, resigned_date, updated_by, profile_updated_by, profile_updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
        ON CONFLICT (id) DO NOTHING`,
       [uid, name, email, passwordHash, role, gender, position || department, department, joinDate, managerId || null,
-       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, isResigned === true, (isResigned === true && resignedDate) ? resignedDate : null, normalizeUserId(req.user?.id) || null]
+       sickQuota, personalQuota, vacationQuota, ordinationQuota, militaryQuota, maternityQuota, sterilizationQuota, paternityQuota, isResigned === true, (isResigned === true && resignedDate) ? resignedDate : null, normalizeUserId(req.user?.id) || null, normalizeUserId(req.user?.id) || null]
     );
     if ((ins.rowCount ?? 0) > 0) {
       await runVacationQuotaRecalc(normalizeUserId(req.user?.id) || null, normalizeUserId(uid));
@@ -271,6 +297,11 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    try {
+      await ensureUserProfileAuditColumns();
+    } catch (ensureErr) {
+      console.warn('[users] ensure profile audit columns failed:', ensureErr instanceof Error ? ensureErr.message : ensureErr);
+    }
     if (!req.user) return res.status(401).json({ error: 'ต้องล็อกอินก่อนใช้งาน' });
     if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'ไม่มีสิทธิ์ดำเนินการ' });
     const id = req.params.id;
@@ -327,9 +358,11 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'ไม่มีฟิลด์ที่อัปเดต' });
     updates.push(`updated_by = $${i++}`);
     values.push(normalizeUserId(req.user.id));
+    updates.push(`profile_updated_by = $${i++}`);
+    values.push(normalizeUserId(req.user.id));
     values.push(id);
     try {
-      await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${i}`, values);
+      await pool.query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW(), profile_updated_at = NOW() WHERE id = $${i}`, values);
       await runVacationQuotaRecalc(normalizeUserId(req.user.id), normalizeUserId(id));
     } catch (uErr) {
       const msg = uErr instanceof Error ? uErr.message : '';
@@ -353,13 +386,13 @@ router.put('/:id', requireAuth, async (req, res) => {
         u.military_quota, u.maternity_quota, u.sterilization_quota, u.paternity_quota,
         COALESCE(u.is_resigned, FALSE) as "isResigned",
         COALESCE(u.resigned_date::text, '') as "resignedDate",
-        u.updated_at as "updatedAt",
-        u.updated_by as "updatedById",
+        COALESCE(u.profile_updated_at, u.updated_at) as "updatedAt",
+        COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), '')) as "updatedById",
         COALESCE(editor.name, '') as "updatedByName",
         COALESCE(u.is_suspended, FALSE) as "isSuspended",
         COALESCE(u.failed_login_attempts, 0) as "failedLoginAttempts"
       FROM users u
-      LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql('u.updated_by')}
+      LEFT JOIN users editor ON ${normIdSql('editor.id')} = ${normIdSql(`COALESCE(NULLIF(TRIM(COALESCE(u.profile_updated_by::text, '')), ''), NULLIF(TRIM(COALESCE(u.updated_by::text, '')), ''))`)}
       WHERE u.id = $1`, 
       [id]
     );
