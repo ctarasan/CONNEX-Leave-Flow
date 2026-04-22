@@ -901,9 +901,27 @@ export const updateUser = (updatedUser: User): void | Promise<void> => {
     setUsersCache(optimistic);
 
     const promise = api.putUser(updatedUser.id, body)
-      .then(() => api.getUsers())
-      .then((res) => {
-        setUsersCache((res as Record<string, unknown>[]).map(normalizeUser));
+      .then((savedRow) => {
+        const savedUser = normalizeUser(savedRow as Record<string, unknown>);
+        return api.getUsers()
+          .then((res) => {
+            const normalized = (res as Record<string, unknown>[]).map(normalizeUser);
+            const merged = normalized.map((u) => {
+              if (u.id !== savedUser.id) return u;
+              return {
+                ...u,
+                // Keep fresh audit fields from PUT response when list endpoint omits them.
+                updatedAt: savedUser.updatedAt ?? u.updatedAt,
+                updatedById: savedUser.updatedById ?? u.updatedById,
+                updatedByName: savedUser.updatedByName ?? u.updatedByName,
+              };
+            });
+            setUsersCache(merged);
+          })
+          .catch(() => {
+            const merged = prev.map((u) => (u.id === savedUser.id ? { ...u, ...savedUser } : u));
+            setUsersCache(merged);
+          });
       })
       .catch((err) => {
         // rollback
