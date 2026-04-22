@@ -136,48 +136,8 @@ router.post('/login', async (req, res) => {
     const hashFromDb = (row.password_hash ?? '').toString().trim();
     const ok = hashFromDb ? await bcrypt.compare(passwordTrimmed, hashFromDb) : false;
     if (!ok) {
-      // Increment failed attempts; suspend at 3rd failed attempt.
-      const prev = Number(row.failedLoginAttempts) || 0;
-      const next = prev + 1;
-      const shouldSuspend = next >= 3;
-      try {
-        await pool.query(
-          `UPDATE users
-           SET failed_login_attempts = $2,
-               is_suspended = CASE WHEN $3 THEN TRUE ELSE COALESCE(is_suspended, FALSE) END,
-               suspended_at = CASE WHEN $3 THEN NOW() ELSE suspended_at END,
-               updated_at = NOW()
-           WHERE id = $1`,
-          [row.id, next, shouldSuspend]
-        );
-      } catch {
-        // If migration not applied yet, fallback to generic error.
-      }
-      if (shouldSuspend) {
-        return res.status(403).json({
-          error: 'ระบบได้ระงับการใช้งานบัญชีของท่านชั่วคราว เนื่องจากท่านลงชื่อเข้าใช้งานไม่สำเร็จเกิน 3 ครั้ง กรุณาติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ',
-          code: 'ACCOUNT_SUSPENDED',
-        });
-      }
-      if (next === 2) {
-        return res.status(401).json({
-          error: 'ท่านสามารถลงชื่อเข้าใช้งานได้อีกเพียง 1 ครั้ง หากกรอกข้อมูลไม่ถูกต้องอีก ระบบจะระงับการใช้งานบัญชีของท่านชั่วคราว และโปรดติดต่อผู้ดูแลระบบเพื่อดำเนินการปลดระงับ',
-          code: 'LOGIN_WARNING',
-          remaining: 1,
-        });
-      }
+      // Do not mutate users table on auth failures; keep admin audit timestamps for real profile edits only.
       return res.status(401).json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง', code: 'INVALID_CREDENTIALS' });
-    }
-    // Successful login: reset failed attempts.
-    try {
-      await pool.query(
-        `UPDATE users
-         SET failed_login_attempts = 0
-         WHERE id = $1 AND COALESCE(failed_login_attempts, 0) <> 0`,
-        [row.id]
-      );
-    } catch {
-      // ignore if migration not applied yet
     }
     const { password_hash: _, ...user } = row;
     const out = rowToCamel(user as Record<string, unknown>) as Record<string, unknown>;
