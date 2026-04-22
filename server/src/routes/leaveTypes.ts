@@ -65,16 +65,16 @@ async function readLeaveTypeCapabilities(): Promise<LeaveTypeCapabilities> {
 async function ensureLeaveTypeColumns(): Promise<LeaveTypeCapabilities> {
   try {
     await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`);
-    await pool.query(`UPDATE leave_types SET is_active = COALESCE(is_active, TRUE)`);
+    await pool.query(`UPDATE leave_types SET is_active = TRUE WHERE is_active IS NULL`);
     const initial = await readLeaveTypeCapabilities();
     if (!initial.auditEnabled) {
       await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
       await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS updated_by VARCHAR(10)`);
-      await pool.query(`UPDATE leave_types SET updated_at = COALESCE(updated_at, NOW())`);
+      await pool.query(`UPDATE leave_types SET updated_at = NOW() WHERE updated_at IS NULL`);
     }
     if (!initial.quotaEnabled) {
       await pool.query(`ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS default_quota NUMERIC(10,2) DEFAULT 0`);
-      await pool.query(`UPDATE leave_types SET default_quota = COALESCE(default_quota, 0)`);
+      await pool.query(`UPDATE leave_types SET default_quota = 0 WHERE default_quota IS NULL`);
     }
     return await readLeaveTypeCapabilities();
   } catch {

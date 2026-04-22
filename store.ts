@@ -686,23 +686,8 @@ export const addLeaveType = (data: Omit<LeaveTypeDefinition, 'id' | 'order'>): L
 export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>): void | Promise<void> => {
   if (isApiMode()) {
     const targetId = String(id || '').trim().toUpperCase();
-    // ดึงรายการล่าสุดจาก API ก่อน merge — หลีกเลี่ยงการ PUT จาก snapshot ที่มาจาก localStorage/ค่าเก่า
-    return api.getLeaveTypes()
-      .then((res) => {
-        const list = toArray(res).map(normalizeLeaveType);
-        const normalized = normalizeLeaveTypeList(list);
-        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
-        if (idx < 0) {
-          throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
-        }
-        const next = [...normalized];
-        next[idx] = {
-          ...next[idx],
-          ...data,
-          id: next[idx].id,
-        };
-        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
-      })
+    return api.patchLeaveType(targetId, data as unknown as Record<string, unknown>)
+      .then(() => api.getLeaveTypes())
       .then((raw) => {
         const list = toArray(raw).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
@@ -716,17 +701,8 @@ export const updateLeaveType = (id: string, data: Partial<LeaveTypeDefinition>):
 export const setLeaveTypeActive = (id: string, active: boolean): void | Promise<void> => {
   const targetId = String(id || '').toUpperCase();
   if (isApiMode()) {
-    return api
-      .getLeaveTypes()
-      .then((res) => {
-        const list = toArray(res).map(normalizeLeaveType);
-        const normalized = normalizeLeaveTypeList(list);
-        const idx = normalized.findIndex((t) => String(t.id || '').toUpperCase() === targetId);
-        if (idx < 0) throw new Error('ไม่พบประเภทวันลาที่ต้องการแก้ไข');
-        const next = [...normalized];
-        next[idx] = { ...next[idx], isActive: active };
-        return api.putLeaveTypes(next as unknown as Record<string, unknown>[]);
-      })
+    return api.patchLeaveType(targetId, { isActive: active })
+      .then(() => api.getLeaveTypes())
       .then((raw) => {
         const list = toArray(raw).map(normalizeLeaveType);
         _leaveTypesCache = normalizeLeaveTypeList(list);
