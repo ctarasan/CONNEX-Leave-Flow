@@ -6,16 +6,26 @@
 const PROD_BACKEND_URL = 'https://connex-leave-flow-doak.vercel.app';
 /** สำรองเมื่อยังไม่ตั้ง VITE_PREVIEW_API_URL บน Vercel — อัปเดตให้ตรง deployment Preview ล่าสุดของ connex-leave-flow-doak เวลาปล่อยคู่กับ frontend */
 const DEFAULT_CONNEX_PREVIEW_BACKEND = 'https://connex-leave-flow-doak-pk6q925h2-ctarasans-projects.vercel.app';
-const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
-  ? String(import.meta.env.VITE_PREVIEW_API_URL).trim().replace(/\/$/, '')
-  : '';
 const VERCEL_ENV = typeof import.meta !== 'undefined' && import.meta.env?.VERCEL_ENV
   ? String(import.meta.env.VERCEL_ENV).trim().toLowerCase()
   : '';
 
+function normalizeApiBaseCandidate(raw: unknown): string {
+  return String(raw ?? '')
+    .trim()
+    // Defensive cleanup: some env values can accidentally contain escaped newline markers.
+    .replace(/\\r|\\n/g, '')
+    .replace(/\r|\n/g, '')
+    .replace(/\/$/, '');
+}
+
+const PREVIEW_BACKEND_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_PREVIEW_API_URL
+  ? normalizeApiBaseCandidate(import.meta.env.VITE_PREVIEW_API_URL)
+  : '';
+
 function getEffectiveApiBase(): string {
   const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-    ? String(import.meta.env.VITE_API_URL).trim().replace(/\/$/, '')
+    ? normalizeApiBaseCandidate(import.meta.env.VITE_API_URL)
     : '';
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const host = window.location.hostname;
