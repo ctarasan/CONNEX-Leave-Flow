@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import crypto from 'crypto';
 import { pool } from '../db.js';
 import { rowToCamel } from '../util.js';
 import { signToken } from '../middleware/auth.js';
@@ -143,18 +142,11 @@ router.post('/login', async (req, res) => {
     const out = rowToCamel(user as Record<string, unknown>) as Record<string, unknown>;
     out.password = '';
     out.quotas = { sick: 0, personal: 0, vacation: 0, ordination: 0, military: 0, maternity: 0, sterilization: 0, paternity: 0 };
-    const sessionId = crypto.randomUUID();
-    const token = signToken({ id: row.id, role: row.role, email: row.email as string, sessionId });
-    try {
-      await pool.query(
-        `INSERT INTO user_sessions (user_id, session_id, updated_at) VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET session_id = $2, updated_at = NOW()`,
-        [row.id, sessionId]
-      );
-    } catch (sessionErr) {
-      // ตาราง user_sessions อาจยังไม่มี (ยังไม่รัน migration 003) — ให้ login ผ่านไปก่อน
-      console.warn('[auth] user_sessions insert failed:', sessionErr instanceof Error ? sessionErr.message : sessionErr);
-    }
+    // IMPORTANT:
+    // Do not write session rows during normal login because some environments
+    // have DB-level side effects that can touch users.updated_at.
+    // Audit "แก้ไขล่าสุดโดย" must change only when profile data is edited.
+    const token = signToken({ id: row.id, role: row.role, email: row.email as string });
     res.json({ user: out, token });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
